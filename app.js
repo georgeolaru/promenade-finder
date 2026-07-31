@@ -25,7 +25,7 @@
     return eps.filter(function (v, i, a) { return a.indexOf(v) === i; });
   })();
 
-  var map, resultLayers = [];
+  var map, resultLayers = [], historyLayer;
   var $ = function (id) { return document.getElementById(id); };
 
   function initMap() {
@@ -34,6 +34,90 @@
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
+    historyLayer = L.layerGroup().addTo(map);
+  }
+
+  // --- history of processed places (localStorage, always visible on the map) ---
+
+  var HKEY = 'pf_history_v1';
+
+  function loadHistory() {
+    try { return JSON.parse(localStorage.getItem(HKEY)) || []; }
+    catch (e) { return []; }
+  }
+
+  function saveHistoryEntry(query, place, result, clamped) {
+    var entry = {
+      q: query,
+      ts: Date.now(),
+      clamped: !!clamped,
+      place: {
+        display_name: place.display_name,
+        lat: place.lat, lon: place.lon
+      },
+      result: { status: result.status, areas: result.areas }
+    };
+    var hist = loadHistory().filter(function (h) {
+      return h.q.toLowerCase() !== query.toLowerCase();
+    });
+    hist.unshift(entry);
+    hist = hist.slice(0, 30);
+    for (;;) {
+      try { localStorage.setItem(HKEY, JSON.stringify(hist)); break; }
+      catch (e) {
+        if (hist.length <= 1) break; // one entry too big for quota — give up quietly
+        hist.pop();
+      }
+    }
+    renderHistory();
+  }
+
+  function showFromHistory(entry) {
+    if (searching) return;
+    clearResults();
+    $('q').value = entry.q;
+    rememberInUrl(entry.q);
+    var rendered = renderResults(entry.result, entry.place, entry.clamped) || [];
+    var when = new Date(entry.ts);
+    var note = document.createElement('div');
+    note.className = 'note';
+    note.innerHTML = 'From history (' + when.toLocaleDateString() + ') · ' +
+      '<a href="#" id="refresh-history">refresh now</a>';
+    $('verdict').appendChild(note);
+    var link = document.getElementById('refresh-history');
+    if (link) {
+      link.addEventListener('click', function (e) { e.preventDefault(); search(entry.q); });
+    }
+    return rendered;
+  }
+
+  function renderHistory() {
+    var hist = loadHistory();
+    if (historyLayer) {
+      historyLayer.clearLayers();
+      hist.forEach(function (entry) {
+        var m = L.circleMarker([Number(entry.place.lat), Number(entry.place.lon)], {
+          radius: 7, color: '#14b8a6', weight: 2, fillColor: '#14b8a6', fillOpacity: 0.5
+        });
+        var label = shortName(entry.place) +
+          (entry.result.status === 'none' ? ' (no promenade)' : '');
+        m.bindTooltip(label);
+        m.on('click', function () { showFromHistory(entry); });
+        historyLayer.addLayer(m);
+      });
+    }
+    var box = $('history');
+    if (box) {
+      box.innerHTML = hist.length ? '<span class="history-title">Visited:</span>' : '';
+      hist.slice(0, 10).forEach(function (entry) {
+        var chip = document.createElement('span');
+        chip.className = 'history-chip' + (entry.result.status === 'none' ? ' none' : '');
+        chip.textContent = shortName(entry.place);
+        chip.title = entry.q;
+        chip.addEventListener('click', function () { showFromHistory(entry); });
+        box.appendChild(chip);
+      });
+    }
   }
 
   function setStatus(msg, busy) {
@@ -402,6 +486,7 @@
       .then(function (r) {
         setStatus('');
         var rendered = renderResults(r.result, r.place, r.clamped) || [];
+        saveHistoryEntry(query.trim(), r.place, r.result, r.clamped);
         if (rendered.length) {
           agentPromise.then(function (sugs) { annotateWithSuggestions(sugs, rendered); });
         }
@@ -439,6 +524,7 @@
           .then(function (r) {
             var rendered = renderResults(r.result, r.place, r.clamped,
               { trip: true, limit: 2, noFit: true, colorOffset: idx }) || [];
+            saveHistoryEntry(stop, r.place, r.result, r.clamped);
             rendered.forEach(function (x) { allGroups.push(x.group); });
           })
           .catch(function (err) {
@@ -492,6 +578,7 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     initMap();
+    renderHistory();
     $('go').addEventListener('click', function () { search($('q').value); });
     $('near').addEventListener('click', searchNearMe);
     $('q').addEventListener('keydown', function (e) {
