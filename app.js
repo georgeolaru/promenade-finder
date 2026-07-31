@@ -35,6 +35,47 @@
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
     historyLayer = L.layerGroup().addTo(map);
+    map.on('click', onMapClick);
+  }
+
+  // --- click anywhere on the map to Find that locality ---
+
+  var lastLayerClick = 0; // suppress map-click when a marker/area was clicked
+
+  function onMapClick(e) {
+    if (Date.now() - lastLayerClick < 500) return;
+    var lat = e.latlng.lat, lon = e.latlng.lng;
+    var popup = L.popup({ maxWidth: 240 })
+      .setLatLng(e.latlng)
+      .setContent('<div class="find-here-box">Looking up locality…</div>')
+      .openOn(map);
+    fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=13&lat=' + lat + '&lon=' + lon)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var a = d.address || {};
+        var locality = a.city || a.town || a.village || a.municipality || a.hamlet || a.suburb;
+        if (!locality) {
+          popup.setContent('<div class="find-here-box">No locality here.</div>');
+          return;
+        }
+        var q = locality + (a.county ? ', ' + a.county : '') + (a.country ? ', ' + a.country : '');
+        var el = document.createElement('div');
+        el.className = 'find-here-box';
+        el.innerHTML = '<b>' + escapeHtml(locality) + '</b><br>';
+        var btn = document.createElement('button');
+        btn.className = 'find-here-btn';
+        btn.textContent = '🔍 Find promenades';
+        btn.addEventListener('click', function () {
+          map.closePopup();
+          $('q').value = q;
+          search(q);
+        });
+        el.appendChild(btn);
+        popup.setContent(el);
+      })
+      .catch(function () {
+        popup.setContent('<div class="find-here-box">Could not identify this place.</div>');
+      });
   }
 
   // --- history of processed places (localStorage, always visible on the map) ---
@@ -102,7 +143,7 @@
         var label = shortName(entry.place) +
           (entry.result.status === 'none' ? ' (no promenade)' : '');
         m.bindTooltip(label);
-        m.on('click', function () { showFromHistory(entry); });
+        m.on('click', function () { lastLayerClick = Date.now(); showFromHistory(entry); });
         historyLayer.addLayer(m);
       });
     }
@@ -322,6 +363,7 @@
         }
       });
       var group = L.featureGroup(layers).addTo(map);
+      group.on('click', function () { lastLayerClick = Date.now(); });
       group.bindPopup('<b>#' + (i + 1) + ' ' + escapeHtml(area.label) + '</b><br>' + escapeHtml(evidenceLine(area.evidence)));
       resultLayers.push(group);
       allBounds.push(group.getBounds());
