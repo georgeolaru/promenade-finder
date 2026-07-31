@@ -291,11 +291,17 @@
       })
       .then(function (list) {
         if (!list.length) throw new Error('Could not find “' + query + '”. Try adding the country, e.g. “Sibiu, Romania”.');
-        // prefer administrative boundaries / places over POIs
+        // prefer the locality itself — never a county/region that shares its name
+        var LOCALITY = /^(city|town|village|municipality|hamlet|borough|suburb|quarter|neighbourhood)$/;
+        var REGION = /^(county|state|region|province|district)$/;
         var pick = list.find(function (r) {
-          return r.osm_type === 'relation' && r.category === 'boundary';
+          return LOCALITY.test(r.addresstype || '') && r.osm_type === 'relation';
         }) || list.find(function (r) {
-          return r.category === 'place' || r.category === 'boundary';
+          return LOCALITY.test(r.addresstype || '');
+        }) || list.find(function (r) {
+          return r.osm_type === 'relation' && r.category === 'boundary' && !REGION.test(r.addresstype || '');
+        }) || list.find(function (r) {
+          return (r.category === 'place' || r.category === 'boundary') && !REGION.test(r.addresstype || '');
         }) || list[0];
         return pick;
       });

@@ -75,8 +75,14 @@ async function runCase(c) {
     const list = await getJSON(
       'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=' + encodeURIComponent(c.q),
       { headers: { 'User-Agent': 'promenade-finder-calibration' } });
-    const place = list.find(r => r.osm_type === 'relation' && r.category === 'boundary')
-      || list.find(r => r.category === 'place' || r.category === 'boundary') || list[0];
+    // keep in sync with app.js geocode(): locality over county/region
+    const LOC = /^(city|town|village|municipality|hamlet|borough|suburb|quarter|neighbourhood)$/;
+    const REG = /^(county|state|region|province|district)$/;
+    const place = list.find(r => LOC.test(r.addresstype || '') && r.osm_type === 'relation')
+      || list.find(r => LOC.test(r.addresstype || ''))
+      || list.find(r => r.osm_type === 'relation' && r.category === 'boundary' && !REG.test(r.addresstype || ''))
+      || list.find(r => (r.category === 'place' || r.category === 'boundary') && !REG.test(r.addresstype || ''))
+      || list[0];
     if (!place) throw new Error('geocode miss: ' + c.q);
     const body = 'data=' + encodeURIComponent(buildQuery(place));
     let osm, lastErr;
