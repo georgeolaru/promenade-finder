@@ -13,7 +13,11 @@
   var RANK_COLORS = ['#e11d48', '#f59e0b', '#0ea5e9', '#8b5cf6', '#10b981'];
   var HKEY = 'pf_history_v1';
 
-  // Optional local-knowledge agent (Mac mini). Advisory + live gems research.
+  // Local-knowledge agent (Mac mini). Advisory + live gems research.
+  // On https the agent is reached through its Cloudflare tunnel; on the home
+  // network the direct endpoints come first.
+  var AGENT_TUNNEL = 'https://promenade-agent.georgeolaru.com';
+  var AGENT_TOKEN = 'pf-7c1d9a4e2b8f4d61';
   var AGENT_ENDPOINTS = (function () {
     var eps = [];
     if (location.protocol !== 'https:') {
@@ -22,6 +26,7 @@
       }
       eps.push('http://localhost:3041', 'http://100.120.152.48:3041');
     }
+    eps.push(AGENT_TUNNEL);
     return eps.filter(function (v, i, a) { return a.indexOf(v) === i; });
   })();
 
@@ -228,8 +233,8 @@
     if (endpointIndex >= AGENT_ENDPOINTS.length) return Promise.resolve(null);
     var controller = new AbortController();
     var timer = setTimeout(function () { controller.abort(); }, 180000);
-    return fetch(AGENT_ENDPOINTS[endpointIndex] + '/suggest?place=' + encodeURIComponent(placeQuery),
-      { signal: controller.signal })
+    return fetch(AGENT_ENDPOINTS[endpointIndex] + '/suggest?k=' + AGENT_TOKEN +
+      '&place=' + encodeURIComponent(placeQuery), { signal: controller.signal })
       .then(function (r) { clearTimeout(timer); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (d) { return d && Array.isArray(d.areas) ? d.areas : null; })
       .catch(function () { clearTimeout(timer); return fetchSuggestions(placeQuery, endpointIndex + 1); });
@@ -284,23 +289,39 @@
     return tryNext();
   }
 
-  function fetchLiveGems(placeQuery, endpointIndex) {
-    endpointIndex = endpointIndex || 0;
-    if (endpointIndex >= AGENT_ENDPOINTS.length) return Promise.reject(new Error('agent unreachable'));
-    var controller = new AbortController();
-    var timer = setTimeout(function () { controller.abort(); }, 420000);
-    return fetch(AGENT_ENDPOINTS[endpointIndex] + '/gems?place=' + encodeURIComponent(placeQuery),
-      { signal: controller.signal })
-      .then(function (r) { clearTimeout(timer); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(function (d) {
-        if (!d || !Array.isArray(d.places)) throw new Error('bad agent response');
-        return d.places;
-      })
-      .catch(function (err) {
-        clearTimeout(timer);
-        if (endpointIndex + 1 < AGENT_ENDPOINTS.length) return fetchLiveGems(placeQuery, endpointIndex + 1);
-        throw err;
+  // live research is async server-side (202 + polling) — Cloudflare cuts long requests
+  function fetchLiveGems(placeQuery, onProgress) {
+    var started = Date.now();
+    function askOnce(endpointIndex) {
+      endpointIndex = endpointIndex || 0;
+      if (endpointIndex >= AGENT_ENDPOINTS.length) return Promise.reject(new Error('agent unreachable'));
+      var controller = new AbortController();
+      var timer = setTimeout(function () { controller.abort(); }, 90000);
+      return fetch(AGENT_ENDPOINTS[endpointIndex] + '/gems?k=' + AGENT_TOKEN +
+        '&place=' + encodeURIComponent(placeQuery), { signal: controller.signal })
+        .then(function (r) {
+          clearTimeout(timer);
+          if (r.status === 202) return { running: true };
+          if (r.status === 429) throw new Error('research limit reached — try again in a while');
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .catch(function (err) {
+          clearTimeout(timer);
+          if (err.message.indexOf('limit') !== -1) throw err;
+          if (endpointIndex + 1 < AGENT_ENDPOINTS.length) return askOnce(endpointIndex + 1);
+          throw err;
+        });
+    }
+    function loop() {
+      return askOnce(0).then(function (d) {
+        if (d && Array.isArray(d.places)) return d.places;
+        if (Date.now() - started > 480000) throw new Error('research timed out');
+        if (onProgress) onProgress(Math.round((Date.now() - started) / 60000));
+        return new Promise(function (resolve) { setTimeout(resolve, 20000); }).then(loop);
       });
+    }
+    return loop();
   }
 
   // ---------- locality collection ----------
@@ -570,22 +591,23 @@
       .catch(function () {
         var note = document.createElement('div');
         note.className = 'loc-note';
-        if (AGENT_ENDPOINTS.length) {
-          note.innerHTML = 'Not researched yet. ';
-          var btn = document.createElement('button');
-          btn.className = 'research-btn';
-          btn.textContent = 'Research now (≈5 min)';
-          btn.addEventListener('click', function () {
-            btn.disabled = true;
-            btn.textContent = 'Researching…';
-            fetchLiveGems(loc.query)
-              .then(function (places) { note.remove(); renderGems(loc, places); })
-              .catch(function (err) { btn.textContent = 'Failed: ' + err.message; });
-          });
-          note.appendChild(btn);
-        } else {
-          note.textContent = 'Not researched yet for this locality (research runs on the Mac mini).';
-        }
+        note.innerHTML = 'Not researched yet. ';
+        var btn = document.createElement('button');
+        btn.className = 'research-btn';
+        btn.textContent = 'Research now (≈5 min)';
+        btn.addEventListener('click', function () {
+          btn.disabled = true;
+          btn.textContent = '☕ Researching… the agent is reading local press & reviews';
+          fetchLiveGems(loc.query, function (mins) {
+            btn.textContent = '☕ Researching… ' + mins + ' min elapsed (usually ~5)';
+          })
+            .then(function (places) { note.remove(); renderGems(loc, places); })
+            .catch(function (err) {
+              btn.disabled = false;
+              btn.textContent = 'Failed: ' + err.message + ' — tap to retry';
+            });
+        });
+        note.appendChild(btn);
         eatList.appendChild(note);
       });
   }
