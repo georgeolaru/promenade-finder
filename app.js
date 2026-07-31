@@ -66,34 +66,43 @@
       });
   }
 
-  function addGemsButton(query, place) {
-    var btn = document.createElement('button');
-    btn.className = 'gems-btn';
-    btn.textContent = '☕ Owner-run food & coffee (experimental)';
-    btn.addEventListener('click', function () {
-      btn.disabled = true;
-      btn.textContent = '☕ Researching owner-run places… (first time can take ~5 min)';
-      fetchGems(query)
-        .then(function (places) { renderGems(places, place, btn); })
-        .catch(function (err) {
-          btn.textContent = '☕ ' + err.message;
-        });
-    });
-    $('results').appendChild(btn);
+  function gemsFromHeader() {
+    var q = ($('q').value || '').split(';')[0].trim();
+    if (!q) {
+      setStatus('Type a locality first, then hit ☕ Owner-run.');
+      return;
+    }
+    var btn = $('gems');
+    btn.disabled = true;
+    btn.textContent = '☕ Researching… (first time ≈5 min)';
+    fetchGems(q)
+      .then(function (places) { renderGems(places, { display_name: q }); })
+      .catch(function (err) { setStatus('☕ ' + err.message); })
+      .finally(function () {
+        btn.disabled = false;
+        btn.textContent = '☕ Owner-run';
+      });
   }
 
-  function renderGems(places, place, btn) {
-    if (btn) btn.remove();
+  function renderGems(places, place) {
+    var old = document.getElementById('gems-section');
+    if (old) old.remove();
+    gemsLayer.clearLayers();
+
     var results = $('results');
+    var section = document.createElement('div');
+    section.id = 'gems-section';
     var head = document.createElement('div');
     head.className = 'trip-head';
-    head.textContent = '☕ Owner-run food & coffee — researched by the local agent (experimental)';
-    results.appendChild(head);
+    head.textContent = '☕ Owner-run food & coffee in ' + shortName(place) +
+      ' — researched by the local agent (experimental)';
+    section.appendChild(head);
+    results.insertBefore(section, results.firstChild);
     if (!places.length) {
       var none = document.createElement('div');
       none.className = 'agent-note';
       none.textContent = 'The agent could not confirm any owner-run places here.';
-      results.appendChild(none);
+      section.appendChild(none);
       return;
     }
     places.forEach(function (p) {
@@ -105,7 +114,7 @@
         '<span class="gem-type">' + escapeHtml(p.type || '') + '</span></div>' +
         (p.area ? '<div class="card-names">' + escapeHtml(p.area) + '</div>' : '') +
         '<div class="card-evidence">' + escapeHtml(p.evidence || '') + '</div>';
-      results.appendChild(card);
+      section.appendChild(card);
     });
     // geocode pins politely (Nominatim: 1 req/s)
     var cityName = shortName(place);
@@ -678,7 +687,6 @@
           fitBoard();
         } else if (rendered.length) {
           agentPromise.then(function (sugs) { annotateWithSuggestions(sugs, rendered); });
-          if (AGENT_ENDPOINTS.length) addGemsButton(query, r.place);
         }
       })
       .catch(function (err) {
@@ -780,6 +788,8 @@
     renderHistory();
     $('go').addEventListener('click', function () { search($('q').value); });
     $('near').addEventListener('click', searchNearMe);
+    $('gems').addEventListener('click', gemsFromHeader);
+    if (!AGENT_ENDPOINTS.length) $('gems').style.display = 'none'; // needs the mini agent
     $('q').addEventListener('keydown', function (e) {
       if (e.key === 'Enter') search($('q').value);
     });

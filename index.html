@@ -46,6 +46,13 @@
     white-space: nowrap;
   }
   #near:hover { border-color: var(--accent); }
+  #gems {
+    padding: 10px 14px; font-size: 14px; font-weight: 600; border-radius: 10px;
+    border: 1px solid #7c5e1a; background: var(--panel-2); color: #fbbf24; cursor: pointer;
+    white-space: nowrap;
+  }
+  #gems:hover { border-color: #fbbf24; }
+  #gems:disabled { cursor: wait; opacity: .75; }
   .examples { font-size: 13px; color: var(--muted); }
   .example { color: #7dd3fc; cursor: pointer; margin-left: 8px; text-decoration: underline dotted; }
   main { flex: 1; display: flex; min-height: 0; }
@@ -148,6 +155,7 @@
     <input id="q" type="text" placeholder="One place, or a trip: Sibiu; Brașov; Sighișoara" autofocus>
     <button id="go">Find</button>
     <button id="near" title="Find the promenade of the locality you are in now">📍 Near me</button>
+    <button id="gems" title="Owner-operated restaurants & cafés — personal projects, not chains (experimental, researched by the local agent)">☕ Owner-run</button>
   </div>
   <div class="examples">Try:<span class="example">Sibiu</span><span class="example">Piatra Neamț</span><span class="example">Constanța</span><span class="example">Sibiu; Brașov; Sighișoara</span></div>
 </header>
@@ -174,7 +182,7 @@
 </main>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="promenade.js?v=20260731g"></script>
-<script src="app.js?v=20260731g"></script>
+<script src="promenade.js?v=20260731h"></script>
+<script src="app.js?v=20260731h"></script>
 </body>
 </html>
