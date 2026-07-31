@@ -40,12 +40,71 @@
     map.on('click', onMapClick);
   }
 
-  // --- owner-run food & coffee (experimental, needs the mini agent) ---
+  // --- owner-run food & coffee (experimental) ---
+  // Live research needs the mini agent; already-researched localities are also
+  // published as static JSON under gems/ so the https site can show them anywhere.
+
+  function gemsSlug(q) {
+    return q.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
+  }
+
+  function fetchStaticGems(placeQuery) {
+    var slug = gemsSlug(placeQuery);
+    var candidates = [slug, slug + '-romania'];
+    var i = 0;
+    function tryNext() {
+      if (i >= candidates.length) {
+        return Promise.reject(new Error('Not researched yet for this locality — run it from the Mac mini version.'));
+      }
+      return fetch('gems/' + candidates[i++] + '.json')
+        .then(function (r) { if (!r.ok) throw new Error('miss'); return r.json(); })
+        .then(function (d) {
+          if (!d || !Array.isArray(d.places)) throw new Error('miss');
+          return d.places;
+        })
+        .catch(tryNext);
+    }
+    return tryNext();
+  }
+
+  function loadResearchedIndex() {
+    fetch('gems/index.json')
+      .then(function (r) { if (!r.ok) throw new Error('none'); return r.json(); })
+      .then(function (d) {
+        if (!d || !Array.isArray(d.localities) || !d.localities.length) return;
+        var box = $('researched');
+        box.innerHTML = '<span class="history-title">☕ Researched:</span>';
+        d.localities.forEach(function (loc) {
+          var chip = document.createElement('span');
+          chip.className = 'researched-chip';
+          chip.textContent = loc.label + ' (' + loc.count + ')';
+          chip.addEventListener('click', function () { showResearched(loc); });
+          box.appendChild(chip);
+          var m = L.circleMarker([loc.lat, loc.lon], {
+            radius: 5, color: '#b45309', weight: 1.5, fillColor: '#f59e0b', fillOpacity: 0.6
+          });
+          m.bindTooltip('☕ ' + loc.label + ' — ' + loc.count + ' owner-run places');
+          m.on('click', function () { lastLayerClick = Date.now(); showResearched(loc); });
+          historyLayer.addLayer(m);
+        });
+      })
+      .catch(function () { /* no static dataset published */ });
+  }
+
+  function showResearched(loc) {
+    fetchStaticGems(loc.slug)
+      .then(function (places) {
+        map.setView([loc.lat, loc.lon], 13);
+        renderGems(places, { display_name: loc.label });
+      })
+      .catch(function (err) { setStatus('☕ ' + err.message); });
+  }
 
   function fetchGems(placeQuery, endpointIndex) {
     endpointIndex = endpointIndex || 0;
     if (endpointIndex >= AGENT_ENDPOINTS.length) {
-      return Promise.reject(new Error('Local agent unreachable — this experimental feature needs the Mac mini agent (http version).'));
+      return fetchStaticGems(placeQuery); // published dataset fallback (https site)
     }
     var controller = new AbortController();
     var timer = setTimeout(function () { controller.abort(); }, 420000);
@@ -798,7 +857,7 @@
     $('go').addEventListener('click', function () { search($('q').value); });
     $('near').addEventListener('click', searchNearMe);
     $('gems').addEventListener('click', gemsFromHeader);
-    if (!AGENT_ENDPOINTS.length) $('gems').style.display = 'none'; // needs the mini agent
+    loadResearchedIndex();
     $('q').addEventListener('keydown', function (e) {
       if (e.key === 'Enter') search($('q').value);
     });

@@ -111,6 +111,14 @@
   }
   .history-chip:hover { border-color: #14b8a6; }
   .history-chip.none { color: var(--muted); text-decoration: line-through; }
+  #researched { margin-bottom: 4px; line-height: 2; }
+  #researched:empty { display: none; }
+  .researched-chip {
+    display: inline-block; font-size: 12px; font-weight: 600; cursor: pointer;
+    background: var(--panel-2); border: 1px solid #7c5e1a; border-radius: 999px;
+    padding: 3px 10px; margin: 0 6px 4px 0; color: #fbbf24;
+  }
+  .researched-chip:hover { border-color: #fbbf24; }
   .verdict .note a { color: #7dd3fc; }
   .trip-head {
     font-size: 14px; font-weight: 700; margin: 14px 0 8px; padding-top: 10px;
@@ -163,6 +171,7 @@
   <aside>
     <div id="status"></div>
     <div id="queue"></div>
+    <div id="researched"></div>
     <div id="history"></div>
     <div id="verdict" class="verdict"></div>
     <div id="results"></div>
@@ -182,7 +191,7 @@
 </main>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="promenade.js?v=20260731j"></script>
-<script src="app.js?v=20260731j"></script>
+<script src="promenade.js?v=20260731k"></script>
+<script src="app.js?v=20260731k"></script>
 </body>
 </html>
