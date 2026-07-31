@@ -338,8 +338,11 @@
       kidBits.push('car-free walking');
 
       var lat = area.center[0].toFixed(6), lon = area.center[1].toFixed(6);
-      var gmaps = 'https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lon;
-      var amaps = 'https://maps.apple.com/?daddr=' + lat + ',' + lon;
+      // primary links open the location pin; directions are secondary
+      var gmapsLoc = 'https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lon;
+      var amapsLoc = 'https://maps.apple.com/?ll=' + lat + ',' + lon +
+        '&q=' + encodeURIComponent(area.label);
+      var gmapsDir = 'https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lon;
 
       var card = document.createElement('div');
       card.className = 'card';
@@ -350,8 +353,9 @@
         (area.names.length > 2 ? '<div class="card-names">also: ' + escapeHtml(area.names.slice(2).join(', ')) + '</div>' : '') +
         '<div class="card-evidence">' + escapeHtml(evidenceLine(area.evidence)) + '</div>' +
         '<div class="card-actions">' +
-          '<a href="' + gmaps + '" target="_blank" rel="noopener">Google&nbsp;Maps&nbsp;→</a>' +
-          '<a href="' + amaps + '" target="_blank" rel="noopener">Apple&nbsp;Maps&nbsp;→</a>' +
+          '<a href="' + gmapsLoc + '" target="_blank" rel="noopener">Google&nbsp;Maps&nbsp;→</a>' +
+          '<a href="' + amapsLoc + '" target="_blank" rel="noopener">Apple&nbsp;Maps&nbsp;→</a>' +
+          '<a class="secondary" href="' + gmapsDir + '" target="_blank" rel="noopener">directions</a>' +
         '</div>';
       card.addEventListener('click', function (e) {
         if (e.target.closest('a')) return; // let directions links navigate
