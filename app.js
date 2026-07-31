@@ -5,7 +5,8 @@
   var OVERPASS_MIRRORS = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
-    'https://overpass.private.coffee/api/interpreter'
+    'https://overpass.private.coffee/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
   ];
   var MAX_SPAN_DEG = 0.09; // clamp huge cities to ~10 km around the centre
 
@@ -319,9 +320,11 @@
     if (e - w > MAX_SPAN_DEG * 1.4) { w = lon - MAX_SPAN_DEG * 0.7; e = lon + MAX_SPAN_DEG * 0.7; clamped = true; }
     var bbox = [s, w, n, e].join(',');
 
+    // area filter only for relations — Overpass often has no area object for a
+    // locality mapped as a closed way (e.g. Vaslui city), which would silently
+    // return zero results; the tight city bbox + radius filter covers those.
     var areaFilter = '';
     if (place.osm_type === 'relation') areaFilter = 'area(' + (3600000000 + place.osm_id) + ')->.a;';
-    else if (place.osm_type === 'way') areaFilter = 'area(' + (2400000000 + place.osm_id) + ')->.a;';
     var inArea = areaFilter ? '(area.a)' : '';
 
     var q = '[out:json][timeout:90][bbox:' + bbox + '];\n' + areaFilter + '(\n' +
@@ -351,9 +354,9 @@
     return { query: q, clamped: clamped, analyzeOpts: analyzeOpts(place) };
   }
 
-  // localities without an admin boundary get a plausible-extent radius
+  // localities without a usable admin-boundary area get a plausible-extent radius
   function analyzeOpts(place) {
-    if (place.osm_type === 'relation' || place.osm_type === 'way') return {};
+    if (place.osm_type === 'relation') return {};
     var t = (place.addresstype || place.type || '');
     var maxKm = /hamlet|isolated_dwelling/.test(t) ? 1.2 :
                 /village|suburb|quarter|neighbourhood/.test(t) ? 2.0 :

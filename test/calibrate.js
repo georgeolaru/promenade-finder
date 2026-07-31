@@ -5,7 +5,10 @@ const fs = require('fs');
 const path = require('path');
 const Promenade = require('../promenade.js');
 
+// overpass-api.de rejects fake "Mozilla/5.0" curl UAs with 406 — an honest app UA works
+const UA = 'PromenadeFinder/1.0 (+https://georgeolaru.com/public/promenade-finder/)';
 const MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
 ];
@@ -37,9 +40,9 @@ function buildQuery(place) {
   if (n - s > MAX_SPAN_DEG) { s = lat - MAX_SPAN_DEG / 2; n = lat + MAX_SPAN_DEG / 2; clamped = true; }
   if (e - w > MAX_SPAN_DEG * 1.4) { w = lon - MAX_SPAN_DEG * 0.7; e = lon + MAX_SPAN_DEG * 0.7; clamped = true; }
   const bbox = [s, w, n, e].join(',');
+  // area filter only for relations (ways often have no Overpass area object)
   let areaFilter = '';
   if (place.osm_type === 'relation') areaFilter = `area(${3600000000 + place.osm_id})->.a;`;
-  else if (place.osm_type === 'way') areaFilter = `area(${2400000000 + place.osm_id})->.a;`;
   const inArea = areaFilter ? '(area.a)' : '';
   const q = `[out:json][timeout:90][bbox:${bbox}];\n${areaFilter}(\n` +
     `  way["highway"~"^(pedestrian|living_street)$"]${inArea};\n` +
@@ -90,7 +93,7 @@ async function runCase(c) {
       try {
         osm = await getJSON(mirror, {
           method: 'POST', body,
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Mozilla/5.0 promenade-finder-calibration' }
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': UA }
         });
         break;
       } catch (e) { lastErr = e; await new Promise(r => setTimeout(r, 3000)); }
@@ -104,7 +107,7 @@ async function runCase(c) {
   // mirror app.js analyzeOpts: point-geocoded localities get a plausible-extent radius
   let opts = {};
   const p = data.place;
-  if (p.osm_type !== 'relation' && p.osm_type !== 'way') {
+  if (p.osm_type !== 'relation') {
     const t = p.addresstype || p.type || '';
     const maxKm = /hamlet|isolated_dwelling/.test(t) ? 1.2 :
       /village|suburb|quarter|neighbourhood/.test(t) ? 2.0 : /town/.test(t) ? 3.5 : 5.0;
