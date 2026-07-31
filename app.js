@@ -475,35 +475,90 @@
     try { history.replaceState(null, '', '?q=' + encodeURIComponent(query)); } catch (e) { /* file:// */ }
   }
 
+  // queue: Find while a search runs enqueues it; results accumulate on the board
+  var queue = [];
+  var board = { groups: [], queries: [], labels: [] };
+
+  function updateQueueUI() {
+    var el = $('queue');
+    if (el) el.textContent = queue.length ? '⏳ Queued: ' + queue.join(' · ') : '';
+  }
+
+  function drainQueue() {
+    if (!queue.length) return;
+    var next = queue.shift();
+    updateQueueUI();
+    var stops = next.split(';').map(function (s) { return s.trim(); }).filter(Boolean);
+    if (stops.length > 1) searchTrip(stops);
+    else runSingle(next, true);
+  }
+
   function search(query) {
-    if (searching || !query.trim()) return;
+    query = (query || '').trim();
+    if (!query) return;
+    if (searching) {
+      if (queue.length < 8 && queue.indexOf(query) === -1) {
+        queue.push(query);
+        updateQueueUI();
+      }
+      return;
+    }
     var stops = query.split(';').map(function (s) { return s.trim(); }).filter(Boolean);
     if (stops.length > 1) return searchTrip(stops);
+    runSingle(query, false);
+  }
+
+  function fitBoard() {
+    if (!board.groups.length) return;
+    var b = board.groups[0].getBounds();
+    board.groups.slice(1).forEach(function (g) { b.extend(g.getBounds()); });
+    map.fitBounds(b.pad(0.15));
+  }
+
+  function runSingle(query, append) {
     searching = true;
-    $('go').disabled = true;
-    clearResults();
-    rememberInUrl(query.trim());
+    if (!append) {
+      clearResults();
+      board = { groups: [], queries: [], labels: [] };
+    }
 
-    var agentPromise = AGENT_ENDPOINTS.length ? fetchSuggestions(query) : Promise.resolve(null);
+    var agentPromise = (!append && AGENT_ENDPOINTS.length) ? fetchSuggestions(query) : Promise.resolve(null);
 
-    runPipeline(query.trim(), '')
+    runPipeline(query, append ? '[' + query + '] ' : '')
       .then(function (r) {
         setStatus('');
-        var rendered = renderResults(r.result, r.place, r.clamped) || [];
-        saveHistoryEntry(query.trim(), r.place, r.result, r.clamped);
-        if (rendered.length) {
+        var rendered = renderResults(r.result, r.place, r.clamped,
+          append ? { trip: true, limit: 3, noFit: true, colorOffset: board.labels.length } : {}) || [];
+        saveHistoryEntry(query, r.place, r.result, r.clamped);
+        board.queries.push(query);
+        board.labels.push(shortName(r.place));
+        rendered.forEach(function (x) { board.groups.push(x.group); });
+        rememberInUrl(board.queries.join('; '));
+        if (append) {
+          var v = $('verdict');
+          v.className = 'verdict strong';
+          v.innerHTML = '<strong>Trip: ' + escapeHtml(board.labels.join(' → ')) + '</strong>';
+          fitBoard();
+        } else if (rendered.length) {
           agentPromise.then(function (sugs) { annotateWithSuggestions(sugs, rendered); });
         }
       })
       .catch(function (err) {
         setStatus('');
-        var v = $('verdict');
-        v.className = 'verdict error';
-        v.textContent = err.message;
+        if (append) {
+          var head = document.createElement('div');
+          head.className = 'trip-head';
+          head.textContent = query + ' — ' + err.message;
+          $('results').appendChild(head);
+        } else {
+          var v2 = $('verdict');
+          v2.className = 'verdict error';
+          v2.textContent = err.message;
+        }
       })
       .finally(function () {
         searching = false;
-        $('go').disabled = false;
+        drainQueue();
       });
   }
 
@@ -511,8 +566,8 @@
   function searchTrip(stops) {
     if (searching) return;
     searching = true;
-    $('go').disabled = true;
     clearResults();
+    board = { groups: [], queries: [], labels: [] };
     stops = stops.slice(0, 6);
     rememberInUrl(stops.join('; '));
     var verdict = $('verdict');
@@ -529,7 +584,9 @@
             var rendered = renderResults(r.result, r.place, r.clamped,
               { trip: true, limit: 2, noFit: true, colorOffset: idx }) || [];
             saveHistoryEntry(stop, r.place, r.result, r.clamped);
-            rendered.forEach(function (x) { allGroups.push(x.group); });
+            board.queries.push(stop);
+            board.labels.push(shortName(r.place));
+            rendered.forEach(function (x) { allGroups.push(x.group); board.groups.push(x.group); });
           })
           .catch(function (err) {
             var head = document.createElement('div');
@@ -547,7 +604,7 @@
         map.fitBounds(b.pad(0.15));
       }
       searching = false;
-      $('go').disabled = false;
+      drainQueue();
     });
   }
 
