@@ -16,6 +16,8 @@
     --muted: #93a0b8;
     --accent: #e11d48;
     --border: #2a3550;
+    --amber: #fbbf24;
+    --teal: #5eead4;
   }
   * { box-sizing: border-box; }
   body {
@@ -23,175 +25,200 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background: var(--bg); color: var(--text);
   }
-  header {
-    padding: 14px 20px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-    background: var(--panel); border-bottom: 1px solid var(--border);
+  header.topbar {
+    padding: 12px 18px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    background: var(--panel); border-bottom: 1px solid var(--border); z-index: 1200;
   }
-  header h1 { font-size: 18px; margin: 0; font-weight: 700; letter-spacing: .2px; }
-  header h1 span { color: var(--accent); }
-  .searchbox { display: flex; gap: 8px; flex: 1; min-width: 260px; max-width: 560px; }
+  .topbar h1 { font-size: 17px; margin: 0; font-weight: 700; letter-spacing: .2px; white-space: nowrap; }
+  .topbar h1 span { color: var(--accent); }
+  .searchbox { display: flex; gap: 8px; flex: 1; min-width: 230px; max-width: 520px; }
   #q {
-    flex: 1; padding: 10px 14px; font-size: 15px; border-radius: 10px;
+    flex: 1; padding: 9px 13px; font-size: 15px; border-radius: 10px;
     border: 1px solid var(--border); background: var(--panel-2); color: var(--text); outline: none;
   }
   #q:focus { border-color: var(--accent); }
-  #go {
-    padding: 10px 18px; font-size: 15px; font-weight: 600; border: none; border-radius: 10px;
-    background: var(--accent); color: #fff; cursor: pointer;
-  }
-  #go:disabled { opacity: .5; cursor: wait; }
-  #near {
-    padding: 10px 14px; font-size: 14px; font-weight: 600; border-radius: 10px;
-    border: 1px solid var(--border); background: var(--panel-2); color: var(--text); cursor: pointer;
+  #go, #near {
+    padding: 9px 14px; font-size: 14px; font-weight: 600; border-radius: 10px; cursor: pointer;
     white-space: nowrap;
   }
+  #go { border: none; background: var(--accent); color: #fff; }
+  #near { border: 1px solid var(--border); background: var(--panel-2); color: var(--text); }
   #near:hover { border-color: var(--accent); }
-  #gems {
-    padding: 10px 14px; font-size: 14px; font-weight: 600; border-radius: 10px;
-    border: 1px solid #7c5e1a; background: var(--panel-2); color: #fbbf24; cursor: pointer;
-    white-space: nowrap;
-  }
-  #gems:hover { border-color: #fbbf24; }
-  #gems:disabled { cursor: wait; opacity: .75; }
-  .examples { font-size: 13px; color: var(--muted); }
-  .example { color: #7dd3fc; cursor: pointer; margin-left: 8px; text-decoration: underline dotted; }
-  main { flex: 1; display: flex; min-height: 0; }
-  aside {
-    width: 380px; min-width: 300px; overflow-y: auto; padding: 16px;
-    background: var(--panel); border-right: 1px solid var(--border);
-  }
+
+  main { flex: 1; display: flex; min-height: 0; position: relative; }
   #map { flex: 1; background: #0b0f18; }
-  #status { font-size: 13px; color: var(--muted); min-height: 18px; margin-bottom: 10px; }
+
+  aside {
+    width: 400px; min-width: 320px; display: flex; flex-direction: column;
+    background: var(--panel); border-right: 1px solid var(--border); z-index: 1100;
+  }
+  #sheet-handle { display: none; }
+  .panel-top { padding: 12px 16px 6px; border-bottom: 1px solid var(--border); }
+  #status { font-size: 12.5px; color: var(--muted); min-height: 17px; }
   #status.busy::before { content: "⏳ "; }
-  .verdict { font-size: 14px; line-height: 1.5; border-radius: 10px; }
-  .verdict.strong, .verdict.weak, .verdict.none, .verdict.error { padding: 12px 14px; margin-bottom: 12px; }
-  .verdict.strong { background: #14351f; border: 1px solid #1f7a3d; }
-  .verdict.weak   { background: #3a2e10; border: 1px solid #a16207; }
-  .verdict.none   { background: #2e1a22; border: 1px solid #9f1239; }
-  .verdict.error  { background: #3b1420; border: 1px solid #be123c; }
-  .verdict .note { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  #queue { font-size: 12.5px; color: var(--amber); }
+  #queue:empty { display: none; }
+  .layer-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .layer-chip {
+    font-size: 12.5px; font-weight: 650; cursor: pointer; border-radius: 999px;
+    padding: 5px 12px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+  }
+  #layer-walk { color: #fda4af; }
+  #layer-eat { color: var(--amber); }
+  .layer-chip.off { opacity: .38; text-decoration: line-through; }
+  #clear-all {
+    margin-left: auto; font-size: 12px; color: var(--muted); background: none;
+    border: none; cursor: pointer; text-decoration: underline dotted;
+  }
+  #clear-all:hover { color: var(--text); }
+
+  .panel-scroll { flex: 1; overflow-y: auto; padding: 10px 16px 30px; }
+
+  /* empty state: explorer */
+  #empty-state .intro { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 4px 0 12px; }
+  #empty-state .intro b { color: var(--text); }
+  .examples { font-size: 12.5px; color: var(--muted); margin-bottom: 12px; }
+  .example { color: #7dd3fc; cursor: pointer; margin-right: 10px; text-decoration: underline dotted; }
+  #explore-list { display: flex; flex-direction: column; }
+  .explore-row {
+    display: flex; align-items: center; justify-content: space-between; cursor: pointer;
+    padding: 9px 10px; border-radius: 10px; font-size: 14px;
+  }
+  .explore-row:hover { background: var(--panel-2); }
+  .explore-badges { display: flex; gap: 8px; font-size: 11.5px; }
+  .badge-gems { color: var(--amber); }
+  .badge-visited { color: var(--teal); }
+
+  /* locality sections */
+  section.locality {
+    border: 1px solid var(--border); border-radius: 14px; margin-bottom: 12px; overflow: hidden;
+  }
+  .loc-head {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+    background: var(--panel-2); cursor: pointer;
+  }
+  .loc-name { font-weight: 700; font-size: 15px; }
+  .loc-meta { font-size: 12px; color: var(--muted); }
+  .loc-toggle, .loc-remove {
+    background: none; border: none; color: var(--muted); font-size: 13px; cursor: pointer; padding: 2px 4px;
+  }
+  .loc-remove { margin-left: auto; }
+  .loc-remove:hover { color: var(--accent); }
+  .loc-body { padding: 10px 12px; }
+  section.locality.collapsed .loc-body { display: none; }
+  .loc-note { font-size: 12.5px; color: var(--muted); margin: 4px 0 10px; line-height: 1.5; }
+  .loc-note a { color: #7dd3fc; }
+  .eat-head {
+    font-size: 13px; font-weight: 700; color: var(--amber);
+    margin: 12px 0 8px; padding-top: 10px; border-top: 1px solid var(--border);
+  }
+
+  /* cards */
   .card {
     background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px;
-    padding: 12px 14px; margin-bottom: 10px; cursor: pointer; transition: border-color .15s;
+    padding: 11px 13px; margin-bottom: 9px; cursor: pointer; transition: border-color .15s;
   }
   .card:hover { border-color: var(--accent); }
+  .card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .card-head { display: flex; align-items: center; gap: 10px; }
   .rank {
-    width: 24px; height: 24px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 13px;
+    width: 23px; height: 23px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 12.5px;
     display: inline-flex; align-items: center; justify-content: center; flex: none;
   }
-  .card-title { font-weight: 650; font-size: 14.5px; line-height: 1.3; }
-  .card-names { font-size: 12.5px; color: var(--muted); margin: 6px 0 0 34px; }
-  .card-evidence { font-size: 12.5px; color: var(--muted); margin: 8px 0 0 34px; line-height: 1.45; }
-  .card-local {
-    font-size: 12.5px; color: #fbbf24; margin: 8px 0 0 34px; line-height: 1.45;
-  }
-  .card-kids {
-    font-size: 12.5px; color: #34d399; font-weight: 600; margin: 8px 0 0 34px; line-height: 1.45;
-  }
-  .card-actions { margin: 10px 0 0 34px; display: flex; gap: 14px; }
+  .card-title { font-weight: 650; font-size: 14px; line-height: 1.3; }
+  .card-names { font-size: 12.5px; color: var(--muted); margin: 6px 0 0 33px; }
+  .card-evidence { font-size: 12.5px; color: var(--muted); margin: 7px 0 0 33px; line-height: 1.45; }
+  .card-kids { font-size: 12.5px; color: #34d399; font-weight: 600; margin: 7px 0 0 33px; }
+  .card-local { font-size: 12.5px; color: var(--amber); margin: 7px 0 0 33px; line-height: 1.45; }
+  .card-actions { margin: 9px 0 0 33px; display: flex; gap: 12px; flex-wrap: wrap; }
   .card-actions a {
     font-size: 12.5px; font-weight: 600; color: #7dd3fc; text-decoration: none;
-    border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px;
+    border: 1px solid var(--border); border-radius: 8px; padding: 4px 9px;
   }
   .card-actions a:hover { border-color: #7dd3fc; }
   .card-actions a.secondary {
-    border: none; color: var(--muted); text-decoration: underline dotted; padding: 5px 2px; font-weight: 500;
+    border: none; color: var(--muted); text-decoration: underline dotted; padding: 4px 2px; font-weight: 500;
   }
   .card-actions a.secondary:hover { color: #7dd3fc; }
-  #queue { font-size: 12.5px; color: #fbbf24; margin-bottom: 8px; }
-  #queue:empty { display: none; }
-  #history { margin-bottom: 10px; line-height: 2; }
-  #history:empty { display: none; }
-  .history-title { font-size: 12px; color: var(--muted); font-weight: 700; margin-right: 6px; }
-  .history-chip {
-    display: inline-block; font-size: 12px; font-weight: 600; cursor: pointer;
-    background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
-    padding: 3px 10px; margin: 0 6px 4px 0; color: #5eead4;
-  }
-  .history-chip:hover { border-color: #14b8a6; }
-  .history-chip.none { color: var(--muted); text-decoration: line-through; }
-  #researched { margin-bottom: 4px; line-height: 2; }
-  #researched:empty { display: none; }
-  .researched-chip {
-    display: inline-block; font-size: 12px; font-weight: 600; cursor: pointer;
-    background: var(--panel-2); border: 1px solid #7c5e1a; border-radius: 999px;
-    padding: 3px 10px; margin: 0 6px 4px 0; color: #fbbf24;
-  }
-  .researched-chip:hover { border-color: #fbbf24; }
-  .verdict .note a { color: #7dd3fc; }
-  .trip-head {
-    font-size: 14px; font-weight: 700; margin: 14px 0 8px; padding-top: 10px;
-    border-top: 1px solid var(--border);
-  }
-  .trip-head:first-child { border-top: none; margin-top: 0; padding-top: 0; }
-  .gems-btn {
-    width: 100%; margin: 6px 0 10px; padding: 10px 12px; font-size: 13px; font-weight: 600;
-    border: 1px dashed var(--border); border-radius: 10px; background: transparent;
-    color: #fbbf24; cursor: pointer; text-align: left;
-  }
-  .gems-btn:hover { border-color: #fbbf24; }
-  .gems-btn:disabled { cursor: wait; opacity: .8; }
   .card.gem { border-left: 3px solid #f59e0b; }
   .gem-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
   .gem-dot.conf-high { background: #22c55e; }
   .gem-dot.conf-medium { background: #f59e0b; }
   .gem-dot.conf-low { background: #6b7280; }
   .gem-type { font-size: 11.5px; color: var(--muted); margin-left: auto; }
+  .research-btn {
+    padding: 6px 12px; font-size: 12.5px; font-weight: 600; border-radius: 8px; cursor: pointer;
+    border: 1px dashed var(--border); background: transparent; color: var(--amber);
+  }
+  .research-btn:hover { border-color: var(--amber); }
+  .research-btn:disabled { cursor: wait; opacity: .7; }
+
   .find-here-box { font-size: 13px; }
   .find-here-btn {
     margin-top: 6px; padding: 6px 12px; font-size: 13px; font-weight: 600;
-    border: none; border-radius: 8px; background: #e11d48; color: #fff; cursor: pointer;
+    border: none; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer;
   }
-  .agent-note {
-    font-size: 12.5px; color: var(--muted); font-style: italic;
-    padding: 10px 14px; margin-bottom: 10px;
-  }
-  .intro { font-size: 13.5px; color: var(--muted); line-height: 1.55; }
-  .intro b { color: var(--text); }
-  footer-note { display: block; margin-top: 14px; font-size: 11.5px; color: #5d6b85; line-height: 1.5; }
+  footer-note { display: block; margin-top: 16px; font-size: 11.5px; color: #5d6b85; line-height: 1.5; }
+
+  /* mobile: bottom sheet over the map */
   @media (max-width: 760px) {
     main { flex-direction: column; }
-    aside { width: 100%; max-height: 45%; border-right: none; border-bottom: 1px solid var(--border); }
+    #map { flex: 1; }
+    aside {
+      position: absolute; left: 0; right: 0; bottom: 0; width: 100%; min-width: 0;
+      max-height: 46vh; height: auto; border-right: none; border-top: 1px solid var(--border);
+      border-radius: 16px 16px 0 0; transition: max-height .25s ease;
+    }
+    body:not(.sheet-open) aside { max-height: 150px; }
+    body.sheet-open aside { max-height: 78vh; }
+    #sheet-handle {
+      display: block; width: 44px; height: 5px; border-radius: 3px; background: var(--border);
+      margin: 8px auto 0; cursor: pointer; flex: none;
+    }
   }
 </style>
 </head>
 <body>
-<header>
+<header class="topbar">
   <h1>Promenade<span>Finder</span></h1>
   <div class="searchbox">
-    <input id="q" type="text" placeholder="One place, or a trip: Sibiu; Brașov; Sighișoara" autofocus>
+    <input id="q" type="text" placeholder="Add a city, town or village…">
     <button id="go">Find</button>
-    <button id="near" title="Find the promenade of the locality you are in now">📍 Near me</button>
-    <button id="gems" title="Owner-operated restaurants & cafés — personal projects, not chains (experimental, researched by the local agent)">☕ Owner-run</button>
+    <button id="near" title="Add the locality you are in now">📍 Near me</button>
   </div>
-  <div class="examples">Try:<span class="example">Sibiu</span><span class="example">Piatra Neamț</span><span class="example">Constanța</span><span class="example">Sibiu; Brașov; Sighișoara</span></div>
 </header>
 <main>
   <aside>
-    <div id="status"></div>
-    <div id="queue"></div>
-    <div id="researched"></div>
-    <div id="history"></div>
-    <div id="verdict" class="verdict"></div>
-    <div id="results"></div>
-    <div class="intro" id="intro">
-      <b>Where does a place come alive?</b><br><br>
-      Type any city, town or village and PromenadeFinder locates its main promenade —
-      the pedestrian streets, squares, waterfronts and boulevards where people stroll,
-      socialize and soak up the local atmosphere.<br><br>
-      It works by analyzing OpenStreetMap: pedestrian infrastructure is scored together with
-      the density of cafés, restaurants and public spaces, then clustered into distinct areas
-      and ranked. Some places genuinely have no promenade — the app will tell you that too.
-      <footer-note>Data © OpenStreetMap contributors · geocoding by Nominatim · queries via Overpass API.
-      Results reflect what is mapped in OSM; under-mapped villages may show fewer features than reality.</footer-note>
+    <div id="sheet-handle"></div>
+    <div class="panel-top">
+      <div id="status"></div>
+      <div id="queue"></div>
+      <div class="layer-row">
+        <button id="layer-walk" class="layer-chip">🚶 Walk areas</button>
+        <button id="layer-eat" class="layer-chip">☕ Owner-run</button>
+        <button id="clear-all">clear all</button>
+      </div>
+    </div>
+    <div class="panel-scroll">
+      <div id="localities"></div>
+      <div id="empty-state">
+        <div class="intro">
+          <b>Where does a place come alive?</b><br>
+          Pick a locality below, click anywhere on the map, or search — you get its promenade
+          areas (where people stroll &amp; kids play) and its owner-run cafés and restaurants.
+        </div>
+        <div class="examples">Try:<span class="example">Sibiu</span><span class="example">Piatra Neamț</span><span class="example">Jurilovca</span></div>
+        <div id="explore-list"></div>
+        <footer-note>Data © OpenStreetMap contributors · geocoding by Nominatim · Overpass API.
+        Owner-run research by the local agent; results reflect what is mapped/published.</footer-note>
+      </div>
     </div>
   </aside>
   <div id="map"></div>
 </main>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="promenade.js?v=20260731l"></script>
-<script src="app.js?v=20260731l"></script>
+<script src="promenade.js?v=20260731m"></script>
+<script src="app.js?v=20260731m"></script>
 </body>
 </html>
