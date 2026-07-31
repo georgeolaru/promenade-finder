@@ -23,17 +23,21 @@
       return tags.area === 'yes' ? 'square' : 'pedestrian';
     }
     if (tags.highway === 'living_street') return 'living';
-    if ((tags.highway === 'footway' || tags.highway === 'path') && tags.name) {
+    if (tags.highway === 'footway' || tags.highway === 'path') {
       if (tags.footway === 'sidewalk' || tags.footway === 'crossing') return null;
       // hiking trails and informal paths are not promenades
-      if (tags.sac_scale || tags.trail_visibility || tags.informal === 'yes' ||
-          /trail|trase[ue]|hiking/i.test(tags.name)) return null;
+      if (tags.sac_scale || tags.trail_visibility || tags.informal === 'yes') return null;
+      if (!tags.name) return 'parkpath'; // unnamed ⇒ fetched by the inside-parks query block
+      if (/trail|trase[ue]|hiking/i.test(tags.name)) return null;
       return 'footpath';
     }
     if (tags.natural === 'beach') return 'beach';
     if (tags.man_made === 'pier') return 'pier';
     if (tags.leisure === 'marina') return 'marina';
     if (tags.leisure === 'park' || tags.leisure === 'garden') return 'park';
+    // leisure destinations where strolling/socializing happens (ștrand, lido, …)
+    if (/^(water_park|beach_resort|swimming_area|recreation_ground)$/.test(tags.leisure || '')) return 'leisuredest';
+    if (tags.landuse === 'recreation_ground') return 'leisuredest';
     if (FOOD_RE.test(tags.amenity || '')) return 'poi-food';
     if (tags.amenity === 'fountain') return 'poi-other';
     return null;
@@ -102,8 +106,11 @@
     opts = opts || {};
     var ways = [], pois = [], squareNodes = [];
     var latSum = 0, latN = 0;
+    var seenWays = {};
 
     elements.forEach(function (el) {
+      if (el.type === 'way' && seenWays[el.id]) return; // park-paths block may duplicate named ways
+      if (el.type === 'way') seenWays[el.id] = true;
       if (el.type === 'way' && el.geometry && el.geometry.length > 1) {
         var kind = classifyWay(el.tags);
         if (!kind) return;
@@ -146,7 +153,7 @@
       if (!c) {
         c = cells[k] = {
           cx: cx, cy: cy, ped: 0, living: 0, foot: 0, square: 0,
-          beach: 0, pier: 0,
+          beach: 0, pier: 0, parkpath: 0, parkperim: 0, leisure: 0,
           food: 0, other: 0, water: false, park: false, keyword: false,
           wayLen: {}, samples: []
         };
@@ -192,11 +199,13 @@
           if (w.kind === 'pedestrian') c.ped += stepLen;
           else if (w.kind === 'living') c.living += stepLen;
           else if (w.kind === 'footpath') c.foot += stepLen;
+          else if (w.kind === 'parkpath') { c.parkpath += stepLen; c.park = true; }
           else if (w.kind === 'square') c.square += stepLen * 0.5;
           else if (w.kind === 'pier') { c.pier += stepLen; c.water = true; }
           else if (w.kind === 'beach') { c.beach += stepLen; c.water = true; }
           else if (w.kind === 'marina') { c.water = true; continue; }
-          else if (w.kind === 'park') { c.park = true; continue; }
+          else if (w.kind === 'park') { c.parkperim += stepLen; c.park = true; }
+          else if (w.kind === 'leisuredest') c.leisure += stepLen;
           c.samples.push([lat, lon]);
           if (w.name) c.wayLen[w.id] = (c.wayLen[w.id] || 0) + stepLen;
           if (isKeyword) c.keyword = true;
@@ -233,9 +242,12 @@
     var keys = Object.keys(cells);
     keys.forEach(function (k) {
       var c = cells[k];
-      var walk = c.ped * 3.0 + c.living * 1.2 + c.foot * 0.9 + c.square * 2.0 +
-                 c.pier * 2.5 + c.beach * 0.4;
       var social = Math.min(neighborSum(c, 'food'), 25) + Math.min(neighborSum(c, 'other'), 8) * 0.5;
+      // living streets are residential lanes unless there's social life around them
+      var livingW = social > 0 ? 1.2 : 0.25;
+      var walk = c.ped * 3.0 + c.living * livingW + c.foot * 0.9 + c.square * 2.0 +
+                 c.pier * 2.5 + c.beach * 0.4 +
+                 c.parkpath * 1.1 + c.parkperim * 0.3 + c.leisure * 0.6;
       var score;
       if (walk > 0) {
         score = walk * (1 + 0.10 * social);
@@ -279,12 +291,12 @@
     ways.forEach(function (w) { wayById[w.id] = w; });
 
     var areas = clusters.map(function (members) {
-      var total = 0, ped = 0, living = 0, foot = 0, food = 0, other = 0, beach = 0, pier = 0;
+      var total = 0, ped = 0, living = 0, foot = 0, food = 0, other = 0, beach = 0, pier = 0, parkpath = 0;
       var water = false, park = false, keyword = false;
       var wayLen = {}, samples = [];
       members.forEach(function (c) {
         total += c.score; ped += c.ped; living += c.living; foot += c.foot;
-        beach += c.beach; pier += c.pier;
+        beach += c.beach; pier += c.pier; parkpath += c.parkpath;
         food += c.food; other += c.other;
         water = water || c.water; park = park || c.park; keyword = keyword || c.keyword;
         Object.keys(c.wayLen).forEach(function (id) {
@@ -296,10 +308,14 @@
       var named = Object.keys(wayLen)
         .map(function (id) { return { way: wayById[id], len: wayLen[id] }; })
         .filter(function (x) { return x.way && x.way.name; });
-      // squares first, then by contributing length
+      // squares first, then parks/leisure destinations, then by contributing length
+      function labelPriority(w) {
+        if (w.kind === 'square') return 2;
+        if (w.kind === 'park' || w.kind === 'leisuredest') return 1;
+        return 0;
+      }
       named.sort(function (a, b) {
-        var sq = (b.way.kind === 'square') - (a.way.kind === 'square');
-        return sq || b.len - a.len;
+        return labelPriority(b.way) - labelPriority(a.way) || b.len - a.len;
       });
       var seen = {}, names = [];
       named.forEach(function (x) {
@@ -332,6 +348,7 @@
           pedestrianMeters: Math.round(ped),
           livingStreetMeters: Math.round(living),
           footpathMeters: Math.round(foot),
+          parkPathMeters: Math.round(parkpath),
           beachMeters: Math.round(beach),
           pierMeters: Math.round(pier),
           foodPlaces: food,
@@ -365,7 +382,8 @@
     // trail is not a promenade.
     function hasSocialProof(a) {
       var ev = a.evidence;
-      return ev.foodPlaces >= 5 || ev.squares.length > 0 || ev.waterfront || ev.promenadeName;
+      return ev.foodPlaces >= 5 || ev.squares.length > 0 || ev.waterfront || ev.promenadeName ||
+        ev.parkPathMeters >= 500; // a park laced with alleys is inherently a social space
     }
     var status;
     var best = areas.length ? areas[0] : null;

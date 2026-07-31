@@ -17,6 +17,9 @@ const CASES = [
   { q: 'Constanța, Romania', expect: 'strong', truth: 'seafront (Faleza / Cazino) or old town' },
   { q: 'Rășinari, Sibiu, Romania', expect: 'weak-or-none', truth: 'village, no formal promenade' },
   { q: 'Vama Veche, Romania', expect: 'strong-or-weak', truth: 'beach village, shore is the promenade' },
+  // George's ground truth (2026-07-31): 1. Parc Central (near the Theatre),
+  // 2. Ștrandul Tineretului, 3. Trei Căldări — and nothing else qualifies.
+  { q: 'Piatra Neamț, Romania', expect: 'strong', truth: 'Parc Central, Ștrandul Tineretului, Trei Căldări' },
 ];
 
 async function getJSON(url, opts) {
@@ -45,8 +48,13 @@ function buildQuery(place) {
     `  node["place"="square"]${inArea};\n` +
     `  way["natural"="beach"]${inArea};\n` +
     `  way["man_made"="pier"]${inArea};\n` +
-    `  way["leisure"~"^(marina|park|garden)$"]${inArea};\n` +
-    `);\nout tags geom;\n(\n` +
+    `  way["leisure"~"^(marina|park|garden|water_park|beach_resort|swimming_area|recreation_ground)$"]${inArea};\n` +
+    `  way["landuse"="recreation_ground"]${inArea};\n` +
+    `);\nout tags geom;\n` +
+    `way["leisure"~"^(park|garden|water_park|beach_resort|recreation_ground)$"]${inArea};\n` +
+    `map_to_area ->.parkareas;\n` +
+    `way["highway"~"^(footway|path)$"](area.parkareas);\n` +
+    `out tags geom;\n(\n` +
     `  node["amenity"~"^(cafe|restaurant|bar|pub|ice_cream|biergarten|fast_food)$"]${inArea};\n` +
     `  way["amenity"~"^(cafe|restaurant|bar|pub|ice_cream|biergarten|fast_food)$"]${inArea};\n` +
     `  node["amenity"="fountain"]${inArea};\n` +
@@ -107,7 +115,7 @@ async function runCase(c) {
       (a.names.length > 2 ? ' (+ ' + a.names.slice(2).join(', ') + ')' : ''));
     const ev = a.evidence;
     console.log('      ped=' + ev.pedestrianMeters + 'm living=' + ev.livingStreetMeters +
-      'm foot=' + ev.footpathMeters + 'm food=' + ev.foodPlaces +
+      'm foot=' + ev.footpathMeters + 'm parkpath=' + ev.parkPathMeters + 'm food=' + ev.foodPlaces +
       ' squares=[' + ev.squares.join('; ') + '] water=' + ev.waterfront + ' kw=' + ev.promenadeName);
   });
   return { case: c, result };

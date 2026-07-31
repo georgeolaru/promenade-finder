@@ -11,6 +11,20 @@
 
   var RANK_COLORS = ['#e11d48', '#f59e0b', '#0ea5e9', '#8b5cf6', '#10b981'];
 
+  // Optional local-knowledge agent (Mac mini, claude CLI). Advisory only — the app
+  // works fully without it. Same-host works when the app is served from the mini;
+  // the Tailscale IP works for file:// and devices on the tailnet.
+  var AGENT_ENDPOINTS = (function () {
+    var eps = [];
+    if (location.protocol !== 'https:') {
+      if (location.hostname && location.hostname !== 'localhost') {
+        eps.push('http://' + location.hostname + ':3041');
+      }
+      eps.push('http://localhost:3041', 'http://100.120.152.48:3041');
+    }
+    return eps.filter(function (v, i, a) { return a.indexOf(v) === i; });
+  })();
+
   var map, resultLayers = [];
   var $ = function (id) { return document.getElementById(id); };
 
@@ -82,8 +96,14 @@
       '  node["place"="square"]' + inArea + ';\n' +
       '  way["natural"="beach"]' + inArea + ';\n' +
       '  way["man_made"="pier"]' + inArea + ';\n' +
-      '  way["leisure"~"^(marina|park|garden)$"]' + inArea + ';\n' +
-      ');\nout tags geom;\n(\n' +
+      '  way["leisure"~"^(marina|park|garden|water_park|beach_resort|swimming_area|recreation_ground)$"]' + inArea + ';\n' +
+      '  way["landuse"="recreation_ground"]' + inArea + ';\n' +
+      ');\nout tags geom;\n' +
+      // unnamed alleys inside parks & leisure areas — where strolling actually happens
+      'way["leisure"~"^(park|garden|water_park|beach_resort|recreation_ground)$"]' + inArea + ';\n' +
+      'map_to_area ->.parkareas;\n' +
+      'way["highway"~"^(footway|path)$"](area.parkareas);\n' +
+      'out tags geom;\n(\n' +
       '  node["amenity"~"^(cafe|restaurant|bar|pub|ice_cream|biergarten|fast_food)$"]' + inArea + ';\n' +
       '  way["amenity"~"^(cafe|restaurant|bar|pub|ice_cream|biergarten|fast_food)$"]' + inArea + ';\n' +
       '  node["amenity"="fountain"]' + inArea + ';\n' +
@@ -136,6 +156,7 @@
     var walkable = ev.pedestrianMeters + ev.livingStreetMeters;
     if (walkable > 0) bits.push(fmtMeters(walkable) + ' of pedestrian streets');
     if (ev.footpathMeters > 100) bits.push(fmtMeters(ev.footpathMeters) + ' of named walkways');
+    if (ev.parkPathMeters > 150) bits.push(fmtMeters(ev.parkPathMeters) + ' of park alleys');
     if (ev.squares.length) bits.push(ev.squares.length === 1 ? 'public square (' + ev.squares[0] + ')' : ev.squares.length + ' public squares');
     if (ev.foodPlaces) bits.push(ev.foodPlaces + ' cafés/restaurants/bars');
     if (ev.pierMeters > 30) bits.push('pier');
@@ -180,6 +201,7 @@
     }
 
     var allBounds = [];
+    var rendered = [];
     result.areas.forEach(function (area, i) {
       var color = RANK_COLORS[i % RANK_COLORS.length];
 
@@ -213,6 +235,7 @@
         group.openPopup();
       });
       results.appendChild(card);
+      rendered.push({ area: area, card: card });
     });
 
     if (allBounds.length) {
@@ -220,10 +243,76 @@
       allBounds.slice(1).forEach(function (x) { b.extend(x); });
       map.fitBounds(b.pad(0.2));
     }
+    return rendered;
   }
 
   function shortName(place) {
     return place.display_name.split(',')[0];
+  }
+
+  // --- local-knowledge agent (advisory) ---
+
+  function fetchSuggestions(placeQuery, endpointIndex) {
+    endpointIndex = endpointIndex || 0;
+    if (endpointIndex >= AGENT_ENDPOINTS.length) return Promise.resolve(null);
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, 180000);
+    return fetch(AGENT_ENDPOINTS[endpointIndex] + '/suggest?place=' + encodeURIComponent(placeQuery),
+      { signal: controller.signal })
+      .then(function (r) {
+        clearTimeout(timer);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (d) { return d && Array.isArray(d.areas) ? d.areas : null; })
+      .catch(function () {
+        clearTimeout(timer);
+        return fetchSuggestions(placeQuery, endpointIndex + 1);
+      });
+  }
+
+  function normTokens(s) {
+    return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/)
+      .filter(function (t) {
+        return t.length > 3 &&
+          ['parcul', 'parc', 'park', 'strada', 'street', 'piata', 'square', 'aleea',
+           'bulevardul', 'boulevard', 'central', 'zona', 'area', 'promenade', 'promenada'].indexOf(t) === -1;
+      });
+  }
+
+  function annotateWithSuggestions(suggestions, renderedAreas) {
+    if (!suggestions || !suggestions.length) return;
+    var unmatched = [];
+    suggestions.forEach(function (sug) {
+      var sugTokens = normTokens(sug.name);
+      var hit = null;
+      renderedAreas.forEach(function (ra) {
+        if (hit) return;
+        var areaTokens = [];
+        ra.area.names.forEach(function (n) { areaTokens = areaTokens.concat(normTokens(n)); });
+        areaTokens = areaTokens.concat(normTokens(ra.area.label));
+        var overlap = sugTokens.some(function (t) { return areaTokens.indexOf(t) !== -1; });
+        if (overlap) hit = ra;
+      });
+      if (hit) {
+        if (!hit.card.querySelector('.card-local')) {
+          var div = document.createElement('div');
+          div.className = 'card-local';
+          div.textContent = '⭐ Local knowledge agrees: ' + (sug.why || sug.name);
+          hit.card.appendChild(div);
+        }
+      } else if (sug.confidence === 'high') {
+        unmatched.push(sug.name);
+      }
+    });
+    if (unmatched.length) {
+      var note = document.createElement('div');
+      note.className = 'agent-note';
+      note.textContent = 'Local knowledge also mentions: ' + unmatched.join(', ') +
+        ' (not confirmed by map data).';
+      $('results').appendChild(note);
+    }
   }
 
   function escapeHtml(s) {
@@ -242,6 +331,8 @@
     clearResults();
     setStatus('Looking up “' + query + '”…', true);
 
+    var agentPromise = AGENT_ENDPOINTS.length ? fetchSuggestions(query) : Promise.resolve(null);
+
     geocode(query)
       .then(function (place) {
         setStatus('Fetching walkable places from OpenStreetMap… (can take ~10–30 s)', true);
@@ -258,7 +349,10 @@
       })
       .then(function (r) {
         setStatus('');
-        renderResults(r.result, r.place, r.clamped);
+        var rendered = renderResults(r.result, r.place, r.clamped) || [];
+        if (rendered.length) {
+          agentPromise.then(function (sugs) { annotateWithSuggestions(sugs, rendered); });
+        }
       })
       .catch(function (err) {
         setStatus('');
