@@ -53,9 +53,11 @@ function gemsPrompt(place) {
 
 function askClaude(promptText, opts) {
   opts = opts || {};
-  const args = ['-p', '--output-format', 'text'];
+  // NB: --allowedTools is variadic and would swallow a trailing prompt argument,
+  // so it must be followed by another --flag before the positional prompt.
+  const args = ['-p'];
   if (opts.tools) args.push('--allowedTools', opts.tools);
-  args.push(promptText);
+  args.push('--output-format', 'text', promptText);
   return new Promise((resolve, reject) => {
     execFile(CLAUDE_BIN, args,
       { timeout: opts.timeout || TIMEOUT_MS, env: ENV, maxBuffer: 4 * 1024 * 1024 },
