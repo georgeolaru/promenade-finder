@@ -165,7 +165,11 @@
       section.appendChild(none);
       return;
     }
+    var cityForLinks = shortName(place);
     places.forEach(function (p) {
+      var gq = encodeURIComponent(p.name + ', ' + cityForLinks);
+      var gmaps = 'https://www.google.com/maps/search/?api=1&query=' + gq;
+      var amaps = 'https://maps.apple.com/?q=' + gq;
       var card = document.createElement('div');
       card.className = 'card gem';
       card.innerHTML =
@@ -173,7 +177,11 @@
         '<span class="card-title">' + escapeHtml(p.name) + '</span>' +
         '<span class="gem-type">' + escapeHtml(p.type || '') + '</span></div>' +
         (p.area ? '<div class="card-names">' + escapeHtml(p.area) + '</div>' : '') +
-        '<div class="card-evidence">' + escapeHtml(p.evidence || '') + '</div>';
+        '<div class="card-evidence">' + escapeHtml(p.evidence || '') + '</div>' +
+        '<div class="card-actions">' +
+          '<a href="' + gmaps + '" target="_blank" rel="noopener">Google&nbsp;Maps&nbsp;→</a>' +
+          '<a class="secondary" href="' + amaps + '" target="_blank" rel="noopener">Apple&nbsp;Maps</a>' +
+        '</div>';
       section.appendChild(card);
     });
     // geocode pins politely (Nominatim: 1 req/s)
@@ -191,7 +199,10 @@
               radius: 8, color: '#f59e0b', weight: 2, fillColor: '#fbbf24', fillOpacity: 0.85
             });
             m.bindTooltip('☕ ' + p.name);
-            m.bindPopup('<b>' + escapeHtml(p.name) + '</b><br>' + escapeHtml(p.evidence || ''));
+            m.bindPopup('<b>' + escapeHtml(p.name) + '</b><br>' + escapeHtml(p.evidence || '') +
+              '<br><a href="https://www.google.com/maps/search/?api=1&query=' +
+              encodeURIComponent(p.name + ', ' + cityName) +
+              '" target="_blank" rel="noopener">Google Maps →</a>');
             m.on('click', function () { lastLayerClick = Date.now(); });
             gemsLayer.addLayer(m);
           }
