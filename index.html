@@ -160,21 +160,32 @@
   }
   footer-note { display: block; margin-top: 16px; font-size: 11.5px; color: #5d6b85; line-height: 1.5; }
 
-  /* mobile: bottom sheet over the map */
+  /* mobile: bottom sheet over the map, Airbnb-style compact chrome */
   @media (max-width: 760px) {
+    header.topbar { padding: 8px 12px; gap: 8px; flex-wrap: nowrap; }
+    .topbar h1 { display: none; }
+    .searchbox { max-width: none; min-width: 0; }
+    #q { border-radius: 999px; padding: 9px 16px; }
+    #go, #near { padding: 9px 12px; border-radius: 999px; }
+    .btn-label { display: none; }
     main { flex-direction: column; }
     #map { flex: 1; }
     aside {
       position: absolute; left: 0; right: 0; bottom: 0; width: 100%; min-width: 0;
       max-height: 46vh; height: auto; border-right: none; border-top: 1px solid var(--border);
       border-radius: 16px 16px 0 0; transition: max-height .25s ease;
+      box-shadow: 0 -8px 24px rgba(0,0,0,.35);
     }
-    body:not(.sheet-open) aside { max-height: 150px; }
-    body.sheet-open aside { max-height: 78vh; }
+    body:not(.sheet-open) aside { max-height: 230px; }
+    body.sheet-open aside { max-height: 80vh; }
     #sheet-handle {
-      display: block; width: 44px; height: 5px; border-radius: 3px; background: var(--border);
-      margin: 8px auto 0; cursor: pointer; flex: none;
+      display: flex; align-items: center; justify-content: center;
+      height: 22px; cursor: pointer; flex: none;
     }
+    #sheet-handle::after {
+      content: ""; width: 44px; height: 5px; border-radius: 3px; background: var(--border);
+    }
+    .panel-top { padding-top: 2px; }
   }
 </style>
 </head>
@@ -184,7 +195,7 @@
   <div class="searchbox">
     <input id="q" type="text" placeholder="Add a city, town or village…">
     <button id="go">Find</button>
-    <button id="near" title="Add the locality you are in now">📍 Near me</button>
+    <button id="near" title="Add the locality you are in now">📍<span class="btn-label"> Near me</span></button>
   </div>
 </header>
 <main>
@@ -202,13 +213,13 @@
     <div class="panel-scroll">
       <div id="localities"></div>
       <div id="empty-state">
+        <div id="explore-list"></div>
+        <div class="examples">Or try:<span class="example">Sibiu</span><span class="example">Piatra Neamț</span><span class="example">Jurilovca</span></div>
         <div class="intro">
           <b>Where does a place come alive?</b><br>
-          Pick a locality below, click anywhere on the map, or search — you get its promenade
+          Pick a locality above, tap anywhere on the map, or search — you get its promenade
           areas (where people stroll &amp; kids play) and its owner-run cafés and restaurants.
         </div>
-        <div class="examples">Try:<span class="example">Sibiu</span><span class="example">Piatra Neamț</span><span class="example">Jurilovca</span></div>
-        <div id="explore-list"></div>
         <footer-note>Data © OpenStreetMap contributors · geocoding by Nominatim · Overpass API.
         Owner-run research by the local agent; results reflect what is mapped/published.</footer-note>
       </div>
@@ -218,7 +229,7 @@
 </main>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="promenade.js?v=20260731n"></script>
-<script src="app.js?v=20260731n"></script>
+<script src="promenade.js?v=20260731o"></script>
+<script src="app.js?v=20260731o"></script>
 </body>
 </html>

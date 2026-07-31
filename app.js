@@ -33,6 +33,9 @@
   var researchedIndex = []; // from gems/index.json
 
   var $ = function (id) { return document.getElementById(id); };
+  var isMobile = function () { return window.matchMedia('(max-width: 760px)').matches; };
+  var isTouch = window.matchMedia('(pointer: coarse)').matches;
+  function openSheet() { if (isMobile()) document.body.classList.add('sheet-open'); }
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -351,6 +354,7 @@
       renderExplorer();
       rememberInUrl();
       focusLocality(loc);
+      openSheet();
       loadGemsFor(loc);
       agentPromise.then(function (sugs) { annotateWithSuggestions(sugs, loc); });
     }).catch(function (err) {
@@ -434,6 +438,7 @@
   function flashCard(card) {
     document.querySelectorAll('.card.selected').forEach(function (c) { c.classList.remove('selected'); });
     card.classList.add('selected');
+    openSheet();
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
@@ -685,11 +690,12 @@
     });
     rows.sort(function (a, b) { return a.label.localeCompare(b.label, 'ro'); });
 
+    var rG = isTouch ? 9 : 6, rV = isTouch ? 8 : 5;
     rows.forEach(function (row) {
       if (loadedKeys[row.key]) return;
       var m = L.circleMarker([row.lat, row.lon], row.gems
-        ? { radius: 6, color: '#b45309', weight: 1.5, fillColor: '#f59e0b', fillOpacity: 0.7 }
-        : { radius: 5, color: '#0f766e', weight: 1.5, fillColor: '#14b8a6', fillOpacity: 0.6 });
+        ? { radius: rG, color: '#b45309', weight: 2, fillColor: '#f59e0b', fillOpacity: 0.7 }
+        : { radius: rV, color: '#0f766e', weight: 2, fillColor: '#14b8a6', fillOpacity: 0.6 });
       m.bindTooltip(row.label + (row.gems ? ' · ☕ ' + row.gems : ''));
       m.on('click', function () { lastLayerClick = Date.now(); addLocality(row.query); });
       explorerLayer.addLayer(m);
@@ -704,6 +710,13 @@
       el.addEventListener('click', function () { addLocality(row.query); });
       listEl.appendChild(el);
     });
+    $('clear-all').style.display = loaded.length ? '' : 'none';
+    // first paint with nothing loaded: frame the whole explorer dataset
+    if (!loaded.length && rows.length && !renderExplorer._framed) {
+      renderExplorer._framed = true;
+      var pts = rows.map(function (r) { return [r.lat, r.lon]; });
+      map.fitBounds(L.latLngBounds(pts).pad(0.12));
+    }
   }
 
   function loadResearchedIndex() {
