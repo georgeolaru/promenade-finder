@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="robots" content="noindex">
 <title>Promenade Finder</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -20,6 +20,7 @@
     --teal: #5eead4;
   }
   * { box-sizing: border-box; }
+  html, body { touch-action: manipulation; }
   body {
     margin: 0; height: 100vh; display: flex; flex-direction: column;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -217,8 +218,8 @@
         <div class="examples">Or try:<span class="example">Sibiu</span><span class="example">Piatra Neamț</span><span class="example">Jurilovca</span></div>
         <div class="intro">
           <b>Where does a place come alive?</b><br>
-          Pick a locality above, tap anywhere on the map, or search — you get its promenade
-          areas (where people stroll &amp; kids play) and its owner-run cafés and restaurants.
+          Pick a locality above, long-press anywhere on the map, or search — you get its
+          promenade areas (where people stroll &amp; kids play) and its owner-run cafés and restaurants.
         </div>
         <footer-note>Data © OpenStreetMap contributors · geocoding by Nominatim · Overpass API.
         Owner-run research by the local agent; results reflect what is mapped/published.</footer-note>
@@ -229,7 +230,7 @@
 </main>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="promenade.js?v=20260731o"></script>
-<script src="app.js?v=20260731o"></script>
+<script src="promenade.js?v=20260731p"></script>
+<script src="app.js?v=20260731p"></script>
 </body>
 </html>

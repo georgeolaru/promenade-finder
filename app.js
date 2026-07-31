@@ -60,7 +60,16 @@
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
     explorerLayer = L.layerGroup().addTo(map);
-    map.on('click', onMapClick);
+    // touch: plain taps must stay free for panning/pins — locality lookup goes on
+    // long-press (Leaflet fires 'contextmenu' for it); desktop keeps plain click
+    if (isTouch) {
+      map.on('contextmenu', function (e) {
+        if (e.originalEvent) e.originalEvent.preventDefault();
+        onMapClick(e);
+      });
+    } else {
+      map.on('click', onMapClick);
+    }
   }
 
   function onMapClick(e) {
