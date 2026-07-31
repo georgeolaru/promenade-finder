@@ -25,7 +25,7 @@
     return eps.filter(function (v, i, a) { return a.indexOf(v) === i; });
   })();
 
-  var map, resultLayers = [], historyLayer;
+  var map, resultLayers = [], historyLayer, gemsLayer;
   var $ = function (id) { return document.getElementById(id); };
 
   function initMap() {
@@ -35,7 +35,101 @@
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
     historyLayer = L.layerGroup().addTo(map);
+    gemsLayer = L.layerGroup().addTo(map);
     map.on('click', onMapClick);
+  }
+
+  // --- owner-run food & coffee (experimental, needs the mini agent) ---
+
+  function fetchGems(placeQuery, endpointIndex) {
+    endpointIndex = endpointIndex || 0;
+    if (endpointIndex >= AGENT_ENDPOINTS.length) {
+      return Promise.reject(new Error('Local agent unreachable — this experimental feature needs the Mac mini agent (http version).'));
+    }
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, 420000);
+    return fetch(AGENT_ENDPOINTS[endpointIndex] + '/gems?place=' + encodeURIComponent(placeQuery),
+      { signal: controller.signal })
+      .then(function (r) {
+        clearTimeout(timer);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (d) {
+        if (!d || !Array.isArray(d.places)) throw new Error('bad agent response');
+        return d.places;
+      })
+      .catch(function (err) {
+        clearTimeout(timer);
+        if (endpointIndex + 1 < AGENT_ENDPOINTS.length) return fetchGems(placeQuery, endpointIndex + 1);
+        throw err;
+      });
+  }
+
+  function addGemsButton(query, place) {
+    var btn = document.createElement('button');
+    btn.className = 'gems-btn';
+    btn.textContent = '☕ Owner-run food & coffee (experimental)';
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      btn.textContent = '☕ Researching owner-run places… (first time can take ~5 min)';
+      fetchGems(query)
+        .then(function (places) { renderGems(places, place, btn); })
+        .catch(function (err) {
+          btn.textContent = '☕ ' + err.message;
+        });
+    });
+    $('results').appendChild(btn);
+  }
+
+  function renderGems(places, place, btn) {
+    if (btn) btn.remove();
+    var results = $('results');
+    var head = document.createElement('div');
+    head.className = 'trip-head';
+    head.textContent = '☕ Owner-run food & coffee — researched by the local agent (experimental)';
+    results.appendChild(head);
+    if (!places.length) {
+      var none = document.createElement('div');
+      none.className = 'agent-note';
+      none.textContent = 'The agent could not confirm any owner-run places here.';
+      results.appendChild(none);
+      return;
+    }
+    places.forEach(function (p) {
+      var card = document.createElement('div');
+      card.className = 'card gem';
+      card.innerHTML =
+        '<div class="card-head"><span class="gem-dot conf-' + (p.confidence || 'low') + '"></span>' +
+        '<span class="card-title">' + escapeHtml(p.name) + '</span>' +
+        '<span class="gem-type">' + escapeHtml(p.type || '') + '</span></div>' +
+        (p.area ? '<div class="card-names">' + escapeHtml(p.area) + '</div>' : '') +
+        '<div class="card-evidence">' + escapeHtml(p.evidence || '') + '</div>';
+      results.appendChild(card);
+    });
+    // geocode pins politely (Nominatim: 1 req/s)
+    var cityName = shortName(place);
+    var i = 0;
+    (function next() {
+      if (i >= places.length) return;
+      var p = places[i++];
+      fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=' +
+        encodeURIComponent(p.name + ', ' + cityName))
+        .then(function (r) { return r.json(); })
+        .then(function (list) {
+          if (list.length) {
+            var m = L.circleMarker([Number(list[0].lat), Number(list[0].lon)], {
+              radius: 8, color: '#f59e0b', weight: 2, fillColor: '#fbbf24', fillOpacity: 0.85
+            });
+            m.bindTooltip('☕ ' + p.name);
+            m.bindPopup('<b>' + escapeHtml(p.name) + '</b><br>' + escapeHtml(p.evidence || ''));
+            m.on('click', function () { lastLayerClick = Date.now(); });
+            gemsLayer.addLayer(m);
+          }
+        })
+        .catch(function () { /* skip pin */ })
+        .finally(function () { setTimeout(next, 1100); });
+    })();
   }
 
   // --- click anywhere on the map to Find that locality ---
@@ -170,6 +264,7 @@
   function clearResults() {
     resultLayers.forEach(function (l) { map.removeLayer(l); });
     resultLayers = [];
+    if (gemsLayer) gemsLayer.clearLayers();
     $('results').innerHTML = '';
     $('verdict').innerHTML = '';
     $('verdict').className = 'verdict';
@@ -583,6 +678,7 @@
           fitBoard();
         } else if (rendered.length) {
           agentPromise.then(function (sugs) { annotateWithSuggestions(sugs, rendered); });
+          if (AGENT_ENDPOINTS.length) addGemsButton(query, r.place);
         }
       })
       .catch(function (err) {

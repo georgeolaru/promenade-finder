@@ -39,18 +39,37 @@ function prompt(place) {
     '{"areas":[{"name":"...","why":"one line","confidence":"high|medium|low"}]}';
 }
 
-function askClaude(place) {
+function gemsPrompt(place) {
+  return 'Find restaurants, cafés and bistros in "' + place + '" that are OWNER-OPERATED ' +
+    'PERSONAL PROJECTS — the owner is typically present in the location, running and often ' +
+    'serving; NOT franchises, NOT chains, NOT investor-run groups. Use web search to verify: ' +
+    'reviews mentioning the owner by name or presence (ro: proprietarul, patronul, gazda), ' +
+    'interviews with founders, local-press articles about the place as a personal project. ' +
+    'Up to 10. Be strict and honest: OMIT places you cannot support with evidence. ' +
+    'Reply with ONLY compact JSON, no prose, no code fences: ' +
+    '{"places":[{"name":"...","type":"cafe|restaurant|bistro|bar","area":"street/neighborhood",' +
+    '"evidence":"one line: what confirms owner presence","confidence":"high|medium|low"}]}';
+}
+
+function askClaude(promptText, opts) {
+  opts = opts || {};
+  const args = ['-p', '--output-format', 'text'];
+  if (opts.tools) args.push('--allowedTools', opts.tools);
+  args.push(promptText);
   return new Promise((resolve, reject) => {
-    execFile(CLAUDE_BIN, ['-p', '--output-format', 'text', prompt(place)],
-      { timeout: TIMEOUT_MS, env: ENV, maxBuffer: 1024 * 1024 },
+    execFile(CLAUDE_BIN, args,
+      { timeout: opts.timeout || TIMEOUT_MS, env: ENV, maxBuffer: 4 * 1024 * 1024 },
       (err, stdout) => {
         if (err) return reject(new Error('claude CLI failed: ' + err.message));
         const m = String(stdout).match(/\{[\s\S]*\}/);
         if (!m) return reject(new Error('no JSON in claude output'));
         try {
           const parsed = JSON.parse(m[0]);
-          if (!Array.isArray(parsed.areas)) throw new Error('missing areas[]');
-          resolve({ areas: parsed.areas.slice(0, 5), generatedAt: new Date().toISOString() });
+          const key = opts.listKey || 'areas';
+          if (!Array.isArray(parsed[key])) throw new Error('missing ' + key + '[]');
+          const out = { generatedAt: new Date().toISOString() };
+          out[key] = parsed[key].slice(0, opts.max || 5);
+          resolve(out);
         } catch (e) {
           reject(new Error('bad JSON from claude: ' + e.message));
         }
@@ -58,21 +77,32 @@ function askClaude(place) {
   });
 }
 
-function suggest(place) {
+function cached(kind, place, run) {
   const slug = slugify(place);
   if (!slug) return Promise.reject(new Error('empty place'));
-  const cacheFile = path.join(CACHE_DIR, slug + '.json');
+  const key = kind + ':' + slug;
+  const cacheFile = path.join(CACHE_DIR, (kind === 'suggest' ? '' : kind + '-') + slug + '.json');
   if (fs.existsSync(cacheFile)) {
     return Promise.resolve(JSON.parse(fs.readFileSync(cacheFile, 'utf8')));
   }
-  if (inFlight.has(slug)) return inFlight.get(slug);
-  const p = askClaude(place).then((result) => {
+  if (inFlight.has(key)) return inFlight.get(key);
+  const p = run().then((result) => {
     fs.writeFileSync(cacheFile, JSON.stringify(result));
-    inFlight.delete(slug);
+    inFlight.delete(key);
     return result;
-  }).catch((e) => { inFlight.delete(slug); throw e; });
-  inFlight.set(slug, p);
+  }).catch((e) => { inFlight.delete(key); throw e; });
+  inFlight.set(key, p);
   return p;
+}
+
+function suggest(place) {
+  return cached('suggest', place, () => askClaude(prompt(place)));
+}
+
+function gems(place) {
+  return cached('gems', place, () => askClaude(gemsPrompt(place), {
+    tools: 'WebSearch,WebFetch', timeout: 420_000, listKey: 'places', max: 10
+  }));
 }
 
 const server = http.createServer((req, res) => {
@@ -81,10 +111,13 @@ const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   if (url.pathname === '/health') { return res.end(JSON.stringify({ ok: true })); }
-  if (url.pathname !== '/suggest') { res.writeHead(404); return res.end('{"error":"not found"}'); }
+  if (url.pathname !== '/suggest' && url.pathname !== '/gems') {
+    res.writeHead(404); return res.end('{"error":"not found"}');
+  }
   const place = (url.searchParams.get('place') || '').trim().slice(0, 120);
   if (!place) { res.writeHead(400); return res.end('{"error":"missing place"}'); }
-  suggest(place).then((result) => {
+  const handler = url.pathname === '/gems' ? gems : suggest;
+  handler(place).then((result) => {
     res.end(JSON.stringify(result));
   }).catch((e) => {
     res.writeHead(502);
