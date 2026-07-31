@@ -40,6 +40,12 @@
     background: var(--accent); color: #fff; cursor: pointer;
   }
   #go:disabled { opacity: .5; cursor: wait; }
+  #near {
+    padding: 10px 14px; font-size: 14px; font-weight: 600; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text); cursor: pointer;
+    white-space: nowrap;
+  }
+  #near:hover { border-color: var(--accent); }
   .examples { font-size: 13px; color: var(--muted); }
   .example { color: #7dd3fc; cursor: pointer; margin-left: 8px; text-decoration: underline dotted; }
   main { flex: 1; display: flex; min-height: 0; }
@@ -73,6 +79,20 @@
   .card-local {
     font-size: 12.5px; color: #fbbf24; margin: 8px 0 0 34px; line-height: 1.45;
   }
+  .card-kids {
+    font-size: 12.5px; color: #34d399; font-weight: 600; margin: 8px 0 0 34px; line-height: 1.45;
+  }
+  .card-actions { margin: 10px 0 0 34px; display: flex; gap: 14px; }
+  .card-actions a {
+    font-size: 12.5px; font-weight: 600; color: #7dd3fc; text-decoration: none;
+    border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px;
+  }
+  .card-actions a:hover { border-color: #7dd3fc; }
+  .trip-head {
+    font-size: 14px; font-weight: 700; margin: 14px 0 8px; padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .trip-head:first-child { border-top: none; margin-top: 0; padding-top: 0; }
   .agent-note {
     font-size: 12.5px; color: var(--muted); font-style: italic;
     padding: 10px 14px; margin-bottom: 10px;
@@ -90,10 +110,11 @@
 <header>
   <h1>Promenade<span>Finder</span></h1>
   <div class="searchbox">
-    <input id="q" type="text" placeholder="City, town or village — e.g. Sibiu, Romania" autofocus>
+    <input id="q" type="text" placeholder="One place, or a trip: Sibiu; Brașov; Sighișoara" autofocus>
     <button id="go">Find</button>
+    <button id="near" title="Find the promenade of the locality you are in now">📍 Near me</button>
   </div>
-  <div class="examples">Try:<span class="example">Sibiu</span><span class="example">Constanța</span><span class="example">Nice, France</span><span class="example">Rășinari</span></div>
+  <div class="examples">Try:<span class="example">Sibiu</span><span class="example">Piatra Neamț</span><span class="example">Constanța</span><span class="example">Sibiu; Brașov; Sighișoara</span></div>
 </header>
 <main>
   <aside>
@@ -116,7 +137,7 @@
 </main>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="promenade.js?v=20260731a"></script>
-<script src="app.js?v=20260731a"></script>
+<script src="promenade.js?v=20260731b"></script>
+<script src="app.js?v=20260731b"></script>
 </body>
 </html>

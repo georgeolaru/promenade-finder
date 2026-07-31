@@ -38,6 +38,7 @@
     // leisure destinations where strolling/socializing happens (ștrand, lido, …)
     if (/^(water_park|beach_resort|swimming_area|recreation_ground)$/.test(tags.leisure || '')) return 'leisuredest';
     if (tags.landuse === 'recreation_ground') return 'leisuredest';
+    if (tags.leisure === 'playground') return 'poi-playground';
     if (FOOD_RE.test(tags.amenity || '')) return 'poi-food';
     if (tags.amenity === 'fountain') return 'poi-other';
     return null;
@@ -45,6 +46,8 @@
 
   function classifyNode(tags) {
     if (!tags) return null;
+    if (tags.leisure === 'playground') return 'poi-playground';
+    if (tags.amenity === 'bench' || tags.amenity === 'drinking_water') return 'poi-furniture';
     if (FOOD_RE.test(tags.amenity || '')) return 'poi-food';
     if (tags.amenity === 'fountain' || tags.leisure === 'bandstand') return 'poi-other';
     if (ATTRACTION_RE.test(tags.tourism || '')) return 'poi-other';
@@ -114,7 +117,7 @@
       if (el.type === 'way' && el.geometry && el.geometry.length > 1) {
         var kind = classifyWay(el.tags);
         if (!kind) return;
-        if (kind === 'poi-food' || kind === 'poi-other') {
+        if (kind === 'poi-food' || kind === 'poi-other' || kind === 'poi-playground') {
           var c = el.center || el.geometry[Math.floor(el.geometry.length / 2)];
           if (c) pois.push({ lat: c.lat, lon: c.lon, kind: kind, name: el.tags.name });
           return;
@@ -132,7 +135,7 @@
         else pois.push({ lat: el.lat, lon: el.lon, kind: nk, name: el.tags && el.tags.name });
       } else if (el.type === 'way' && el.center) {
         var wk = classifyWay(el.tags);
-        if (wk === 'poi-food' || wk === 'poi-other') {
+        if (wk === 'poi-food' || wk === 'poi-other' || wk === 'poi-playground') {
           pois.push({ lat: el.center.lat, lon: el.center.lon, kind: wk, name: el.tags.name });
         }
       }
@@ -154,7 +157,7 @@
         c = cells[k] = {
           cx: cx, cy: cy, ped: 0, living: 0, foot: 0, square: 0,
           beach: 0, pier: 0, parkpath: 0, parkperim: 0, leisure: 0,
-          food: 0, other: 0, water: false, park: false, keyword: false,
+          food: 0, other: 0, playg: 0, furn: 0, water: false, park: false, keyword: false,
           wayLen: {}, samples: []
         };
       }
@@ -217,6 +220,8 @@
       var cc = proj.cellOf(p.lat, p.lon);
       var c = cell(cc[0], cc[1]);
       if (p.kind === 'poi-food') c.food++;
+      else if (p.kind === 'poi-playground') c.playg++;
+      else if (p.kind === 'poi-furniture') c.furn++;
       else c.other++;
     });
     squareNodes.forEach(function (p) {
@@ -291,13 +296,13 @@
     ways.forEach(function (w) { wayById[w.id] = w; });
 
     var areas = clusters.map(function (members) {
-      var total = 0, ped = 0, living = 0, foot = 0, food = 0, other = 0, beach = 0, pier = 0, parkpath = 0;
+      var total = 0, ped = 0, living = 0, foot = 0, food = 0, other = 0, beach = 0, pier = 0, parkpath = 0, playg = 0, furn = 0;
       var water = false, park = false, keyword = false;
       var wayLen = {}, samples = [];
       members.forEach(function (c) {
         total += c.score; ped += c.ped; living += c.living; foot += c.foot;
         beach += c.beach; pier += c.pier; parkpath += c.parkpath;
-        food += c.food; other += c.other;
+        food += c.food; other += c.other; playg += c.playg; furn += c.furn;
         water = water || c.water; park = park || c.park; keyword = keyword || c.keyword;
         Object.keys(c.wayLen).forEach(function (id) {
           wayLen[id] = (wayLen[id] || 0) + c.wayLen[id];
@@ -353,6 +358,8 @@
           pierMeters: Math.round(pier),
           foodPlaces: food,
           otherPois: other,
+          playgrounds: playg,
+          furniture: furn,
           squares: named.filter(function (x) { return x.way.kind === 'square'; })
             .map(function (x) { return x.way.name; })
             .filter(function (v, i, arr) { return arr.indexOf(v) === i; }),

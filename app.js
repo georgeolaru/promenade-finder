@@ -108,6 +108,9 @@
       '  way["amenity"~"^(cafe|restaurant|bar|pub|ice_cream|biergarten|fast_food)$"]' + inArea + ';\n' +
       '  node["amenity"="fountain"]' + inArea + ';\n' +
       '  node["leisure"="bandstand"]' + inArea + ';\n' +
+      '  node["leisure"="playground"]' + inArea + ';\n' +
+      '  way["leisure"="playground"]' + inArea + ';\n' +
+      '  node["amenity"~"^(bench|drinking_water)$"]' + inArea + ';\n' +
       '  node["tourism"~"^(attraction|artwork|viewpoint)$"]' + inArea + ';\n' +
       ');\nout tags center;';
     return { query: q, clamped: clamped, analyzeOpts: analyzeOpts(place) };
@@ -171,39 +174,55 @@
     return m >= 1000 ? (m / 1000).toFixed(1) + ' km' : m + ' m';
   }
 
-  function renderResults(result, place, clamped) {
+  function renderResults(result, place, clamped, opts) {
+    opts = opts || {};
     var verdict = $('verdict');
     var results = $('results');
 
+    if (opts.trip) {
+      var head = document.createElement('div');
+      head.className = 'trip-head';
+      head.textContent = shortName(place) +
+        (result.status === 'none' ? ' — no clear promenade' :
+         result.status === 'weak' ? ' — modest walkable spots' : '');
+      results.appendChild(head);
+    }
+
     if (result.status === 'none') {
-      verdict.className = 'verdict none';
-      verdict.innerHTML = '<strong>No clear promenade found.</strong> ' +
-        escapeHtml(shortName(place)) + ' doesn’t appear to have a distinct promenade area — no significant ' +
-        'pedestrian streets, squares or waterfront walkways are mapped here. The local social spot may simply be ' +
-        'the main road, a churchyard or a bus stop — or the area may be under-mapped in OpenStreetMap.';
-      map.setView([Number(place.lat), Number(place.lon)], 15);
-      return;
+      if (!opts.trip) {
+        verdict.className = 'verdict none';
+        verdict.innerHTML = '<strong>No clear promenade found.</strong> ' +
+          escapeHtml(shortName(place)) + ' doesn’t appear to have a distinct promenade area — no significant ' +
+          'pedestrian streets, squares or waterfront walkways are mapped here. The local social spot may simply be ' +
+          'the main road, a churchyard or a bus stop — or the area may be under-mapped in OpenStreetMap.';
+        map.setView([Number(place.lat), Number(place.lon)], 15);
+      }
+      return [];
     }
 
-    if (result.status === 'weak') {
-      verdict.className = 'verdict weak';
-      verdict.innerHTML = '<strong>No single dominant promenade,</strong> but there ' +
-        (result.areas.length > 1 ? 'are some walkable spots' : 'is a modest walkable spot') +
-        ' where people are likely to gather:';
-    } else {
-      verdict.className = 'verdict strong';
-      verdict.innerHTML = '<strong>' +
-        (result.areas.length > 1 ? 'Main promenade areas' : 'Main promenade area') +
-        ' of ' + escapeHtml(shortName(place)) + ':</strong>';
-    }
-    if (clamped) {
-      verdict.innerHTML += '<div class="note">Large city — searched the central ~10 km.</div>';
+    if (!opts.trip) {
+      if (result.status === 'weak') {
+        verdict.className = 'verdict weak';
+        verdict.innerHTML = '<strong>No single dominant promenade,</strong> but there ' +
+          (result.areas.length > 1 ? 'are some walkable spots' : 'is a modest walkable spot') +
+          ' where people are likely to gather:';
+      } else {
+        verdict.className = 'verdict strong';
+        verdict.innerHTML = '<strong>' +
+          (result.areas.length > 1 ? 'Main promenade areas' : 'Main promenade area') +
+          ' of ' + escapeHtml(shortName(place)) + ':</strong>';
+      }
+      if (clamped) {
+        verdict.innerHTML += '<div class="note">Large city — searched the central ~10 km.</div>';
+      }
     }
 
+    var shownAreas = opts.limit ? result.areas.slice(0, opts.limit) : result.areas;
+    var colorOffset = opts.colorOffset || 0;
     var allBounds = [];
     var rendered = [];
-    result.areas.forEach(function (area, i) {
-      var color = RANK_COLORS[i % RANK_COLORS.length];
+    shownAreas.forEach(function (area, i) {
+      var color = RANK_COLORS[(i + colorOffset) % RANK_COLORS.length];
 
       var layers = [];
       if (area.hull.length >= 3) {
@@ -223,22 +242,43 @@
       resultLayers.push(group);
       allBounds.push(group.getBounds());
 
+      // kid-friendly: traffic-free walking plus playgrounds, or a furnished
+      // promenade (benches, fountains) where kids can roam safely
+      var ev = area.evidence;
+      var trafficFree = ev.pedestrianMeters + ev.parkPathMeters + ev.footpathMeters;
+      var kidFriendly = trafficFree >= 300 &&
+        (ev.playgrounds >= 1 || ev.furniture >= 5 || (ev.park && trafficFree >= 500));
+      var kidBits = [];
+      if (ev.playgrounds >= 1) kidBits.push(ev.playgrounds === 1 ? '1 playground' : ev.playgrounds + ' playgrounds');
+      if (ev.furniture >= 5) kidBits.push(ev.furniture + ' benches');
+      kidBits.push('car-free walking');
+
+      var lat = area.center[0].toFixed(6), lon = area.center[1].toFixed(6);
+      var gmaps = 'https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lon;
+      var amaps = 'https://maps.apple.com/?daddr=' + lat + ',' + lon;
+
       var card = document.createElement('div');
       card.className = 'card';
       card.innerHTML =
         '<div class="card-head"><span class="rank" style="background:' + color + '">' + (i + 1) + '</span>' +
         '<span class="card-title">' + escapeHtml(area.label) + '</span></div>' +
+        (kidFriendly ? '<div class="card-kids">🛝 Kid-friendly — ' + kidBits.join(', ') + '</div>' : '') +
         (area.names.length > 2 ? '<div class="card-names">also: ' + escapeHtml(area.names.slice(2).join(', ')) + '</div>' : '') +
-        '<div class="card-evidence">' + escapeHtml(evidenceLine(area.evidence)) + '</div>';
-      card.addEventListener('click', function () {
+        '<div class="card-evidence">' + escapeHtml(evidenceLine(area.evidence)) + '</div>' +
+        '<div class="card-actions">' +
+          '<a href="' + gmaps + '" target="_blank" rel="noopener">Google&nbsp;Maps&nbsp;→</a>' +
+          '<a href="' + amaps + '" target="_blank" rel="noopener">Apple&nbsp;Maps&nbsp;→</a>' +
+        '</div>';
+      card.addEventListener('click', function (e) {
+        if (e.target.closest('a')) return; // let directions links navigate
         map.fitBounds(group.getBounds().pad(0.3));
         group.openPopup();
       });
       results.appendChild(card);
-      rendered.push({ area: area, card: card });
+      rendered.push({ area: area, card: card, group: group });
     });
 
-    if (allBounds.length) {
+    if (allBounds.length && !opts.noFit) {
       var b = allBounds[0];
       allBounds.slice(1).forEach(function (x) { b.extend(x); });
       map.fitBounds(b.pad(0.2));
@@ -324,29 +364,41 @@
   // --- search flow ---
 
   var searching = false;
+
+  // geocode → Overpass → analyze, for one locality
+  function runPipeline(query, statusPrefix) {
+    setStatus(statusPrefix + 'Looking up “' + query + '”…', true);
+    return geocode(query).then(function (place) {
+      setStatus(statusPrefix + 'Fetching walkable places from OpenStreetMap… (can take ~10–30 s)', true);
+      var built = buildQuery(place);
+      return fetchOverpass(built.query).then(function (data) {
+        setStatus(statusPrefix + 'Analyzing ' + data.elements.length + ' map features…', true);
+        // let the status paint before the (synchronous) analysis
+        return new Promise(function (resolve) {
+          setTimeout(function () {
+            resolve({ place: place, result: Promenade.analyze(data.elements, built.analyzeOpts), clamped: built.clamped });
+          }, 30);
+        });
+      });
+    });
+  }
+
+  function rememberInUrl(query) {
+    try { history.replaceState(null, '', '?q=' + encodeURIComponent(query)); } catch (e) { /* file:// */ }
+  }
+
   function search(query) {
     if (searching || !query.trim()) return;
+    var stops = query.split(';').map(function (s) { return s.trim(); }).filter(Boolean);
+    if (stops.length > 1) return searchTrip(stops);
     searching = true;
     $('go').disabled = true;
     clearResults();
-    setStatus('Looking up “' + query + '”…', true);
+    rememberInUrl(query.trim());
 
     var agentPromise = AGENT_ENDPOINTS.length ? fetchSuggestions(query) : Promise.resolve(null);
 
-    geocode(query)
-      .then(function (place) {
-        setStatus('Fetching walkable places from OpenStreetMap… (can take ~10–30 s)', true);
-        var built = buildQuery(place);
-        return fetchOverpass(built.query).then(function (data) {
-          setStatus('Analyzing ' + data.elements.length + ' map features…', true);
-          // let the status paint before the (synchronous) analysis
-          return new Promise(function (resolve) {
-            setTimeout(function () {
-              resolve({ place: place, result: Promenade.analyze(data.elements, built.analyzeOpts), clamped: built.clamped });
-            }, 30);
-          });
-        });
-      })
+    runPipeline(query.trim(), '')
       .then(function (r) {
         setStatus('');
         var rendered = renderResults(r.result, r.place, r.clamped) || [];
@@ -366,11 +418,82 @@
       });
   }
 
+  // trip mode: “Sibiu; Brașov; Sighișoara” — top spots of every stop on one map
+  function searchTrip(stops) {
+    if (searching) return;
+    searching = true;
+    $('go').disabled = true;
+    clearResults();
+    stops = stops.slice(0, 6);
+    rememberInUrl(stops.join('; '));
+    var verdict = $('verdict');
+    verdict.className = 'verdict strong';
+    verdict.innerHTML = '<strong>Trip: ' + escapeHtml(stops.join(' → ')) + '</strong>';
+
+    var allGroups = [];
+    var chain = Promise.resolve();
+    stops.forEach(function (stop, idx) {
+      chain = chain.then(function () {
+        var prefix = '[' + (idx + 1) + '/' + stops.length + '] ';
+        return runPipeline(stop, prefix)
+          .then(function (r) {
+            var rendered = renderResults(r.result, r.place, r.clamped,
+              { trip: true, limit: 2, noFit: true, colorOffset: idx }) || [];
+            rendered.forEach(function (x) { allGroups.push(x.group); });
+          })
+          .catch(function (err) {
+            var head = document.createElement('div');
+            head.className = 'trip-head';
+            head.textContent = stop + ' — ' + err.message;
+            $('results').appendChild(head);
+          });
+      });
+    });
+    chain.finally(function () {
+      setStatus('');
+      if (allGroups.length) {
+        var b = allGroups[0].getBounds();
+        allGroups.slice(1).forEach(function (g) { b.extend(g.getBounds()); });
+        map.fitBounds(b.pad(0.15));
+      }
+      searching = false;
+      $('go').disabled = false;
+    });
+  }
+
+  // near me: locate → reverse-geocode to the locality → search it
+  function searchNearMe() {
+    if (searching) return;
+    if (!navigator.geolocation) {
+      setStatus('Geolocation is not available in this browser.');
+      return;
+    }
+    setStatus('Locating you…', true);
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      var lat = pos.coords.latitude, lon = pos.coords.longitude;
+      fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=13&lat=' + lat + '&lon=' + lon)
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var a = d.address || {};
+          var locality = a.city || a.town || a.village || a.municipality || a.hamlet || a.suburb;
+          if (!locality) throw new Error('Could not work out which locality you are in.');
+          var q = locality + (a.county ? ', ' + a.county : '') + (a.country ? ', ' + a.country : '');
+          $('q').value = q;
+          search(q);
+        })
+        .catch(function (err) { setStatus(err.message || 'Reverse geocoding failed.'); });
+    }, function (err) {
+      setStatus(err.code === 1 ? 'Location permission denied.' :
+        'Could not get your location (' + err.message + '). Note: location needs the https version.');
+    }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
+  }
+
   // --- boot ---
 
   document.addEventListener('DOMContentLoaded', function () {
     initMap();
     $('go').addEventListener('click', function () { search($('q').value); });
+    $('near').addEventListener('click', searchNearMe);
     $('q').addEventListener('keydown', function (e) {
       if (e.key === 'Enter') search($('q').value);
     });
@@ -380,5 +503,8 @@
         search(el.textContent);
       });
     });
+    // shareable / bookmarkable searches: ?q=Sibiu or ?q=Sibiu;%20Brașov
+    var q = new URLSearchParams(location.search).get('q');
+    if (q) { $('q').value = q; search(q); }
   });
 })();
