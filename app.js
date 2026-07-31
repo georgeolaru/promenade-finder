@@ -16,7 +16,7 @@
   // Local-knowledge agent (Mac mini). Advisory + live gems research.
   // On https the agent is reached through its Cloudflare tunnel; on the home
   // network the direct endpoints come first.
-  var AGENT_TUNNEL = 'https://promenade-agent.georgeolaru.com';
+  var AGENT_TUNNEL = 'https://promenade-agent.manumanu.app';
   var AGENT_TOKEN = 'pf-7c1d9a4e2b8f4d61';
   var AGENT_ENDPOINTS = (function () {
     var eps = [];
