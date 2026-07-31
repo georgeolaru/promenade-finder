@@ -117,11 +117,39 @@ const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   if (url.pathname === '/health') { return res.end(JSON.stringify({ ok: true })); }
-  if (url.pathname !== '/suggest' && url.pathname !== '/gems') {
+  if (url.pathname !== '/suggest' && url.pathname !== '/gems' && url.pathname !== '/feedback') {
     res.writeHead(404); return res.end('{"error":"not found"}');
   }
   if (url.searchParams.get('k') !== TOKEN) {
     res.writeHead(403); return res.end('{"error":"forbidden"}');
+  }
+
+  // user feedback on results — appended to data/feedback.jsonl, reviewed later
+  // to recalibrate the system (the Piatra Neamț loop, productized)
+  if (url.pathname === '/feedback') {
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', (c) => { body += c; if (body.length > 4096) req.destroy(); });
+      req.on('end', () => {
+        try {
+          const entry = JSON.parse(body);
+          entry.receivedAt = new Date().toISOString();
+          fs.appendFileSync(path.join(CACHE_DIR, 'feedback.jsonl'), JSON.stringify(entry) + '\n');
+          res.end('{"ok":true}');
+        } catch (e) {
+          res.writeHead(400); res.end('{"error":"bad feedback"}');
+        }
+      });
+      return;
+    }
+    // GET: review the collected feedback
+    try {
+      const lines = fs.readFileSync(path.join(CACHE_DIR, 'feedback.jsonl'), 'utf8')
+        .trim().split('\n').slice(-200).map((l) => JSON.parse(l));
+      return res.end(JSON.stringify({ count: lines.length, entries: lines }));
+    } catch (e) {
+      return res.end('{"count":0,"entries":[]}');
+    }
   }
   const place = (url.searchParams.get('place') || '').trim().slice(0, 120);
   if (!place) { res.writeHead(400); return res.end('{"error":"missing place"}'); }

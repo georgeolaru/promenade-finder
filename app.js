@@ -324,6 +324,91 @@
     return loop();
   }
 
+  // ---------- feedback (recorded on the mini, analyzed to improve the system) ----------
+
+  var FBQ_KEY = 'pf_feedback_queue_v1';
+
+  function postFeedback(entry, endpointIndex) {
+    endpointIndex = endpointIndex || 0;
+    if (endpointIndex >= AGENT_ENDPOINTS.length) return Promise.reject(new Error('unreachable'));
+    // text/plain body avoids a CORS preflight
+    return fetch(AGENT_ENDPOINTS[endpointIndex] + '/feedback?k=' + AGENT_TOKEN, {
+      method: 'POST', body: JSON.stringify(entry), headers: { 'Content-Type': 'text/plain' }
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return true;
+    }).catch(function () { return postFeedback(entry, endpointIndex + 1); });
+  }
+
+  function queueFeedback(entry) {
+    try {
+      var q = JSON.parse(localStorage.getItem(FBQ_KEY)) || [];
+      q.push(entry);
+      localStorage.setItem(FBQ_KEY, JSON.stringify(q.slice(-50)));
+    } catch (e) { /* full/unavailable */ }
+  }
+
+  function flushFeedbackQueue() {
+    var q;
+    try { q = JSON.parse(localStorage.getItem(FBQ_KEY)) || []; } catch (e) { q = []; }
+    if (!q.length) return;
+    postFeedback(q[0]).then(function () {
+      q.shift();
+      localStorage.setItem(FBQ_KEY, JSON.stringify(q));
+      flushFeedbackQueue();
+    }).catch(function () { /* still offline — keep queued */ });
+  }
+
+  function sendFeedback(entry, doneEl) {
+    entry.ts = new Date().toISOString();
+    entry.ua = isTouch ? 'touch' : 'desktop';
+    postFeedback(entry).then(function () {
+      doneEl.textContent = '✓ Feedback saved — thank you!';
+    }).catch(function () {
+      queueFeedback(entry);
+      doneEl.textContent = '✓ Saved locally — will sync when the agent is reachable.';
+    });
+  }
+
+  // attach 👍/👎 + optional comment to any card
+  function addFeedbackUI(card, context) {
+    var bar = document.createElement('div');
+    bar.className = 'fb-bar';
+    bar.innerHTML = '<button class="fb-btn" data-v="up" title="Accurate">👍</button>' +
+      '<button class="fb-btn" data-v="down" title="Wrong / not really">👎</button>';
+    var form = document.createElement('div');
+    form.className = 'fb-form';
+    form.style.display = 'none';
+    form.innerHTML = '<textarea class="fb-text" rows="2" maxlength="500" ' +
+      'placeholder="Optional: what did you find? (e.g. nu pare zonă pietonală în Street View)"></textarea>' +
+      '<button class="fb-send">Send</button>';
+    bar.querySelectorAll('.fb-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        bar.querySelectorAll('.fb-btn').forEach(function (b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        form.style.display = '';
+        form.setAttribute('data-verdict', btn.getAttribute('data-v'));
+        form.querySelector('.fb-text').focus();
+      });
+    });
+    form.addEventListener('click', function (e) { e.stopPropagation(); });
+    form.querySelector('.fb-send').addEventListener('click', function () {
+      var entry = Object.assign({}, context, {
+        verdict: form.getAttribute('data-verdict'),
+        comment: form.querySelector('.fb-text').value.trim()
+      });
+      var done = document.createElement('div');
+      done.className = 'fb-done';
+      done.textContent = 'Sending…';
+      form.replaceWith(done);
+      bar.remove();
+      sendFeedback(entry, done);
+    });
+    card.appendChild(bar);
+    card.appendChild(form);
+  }
+
   // ---------- locality collection ----------
 
   function rememberInUrl() {
@@ -568,10 +653,14 @@
           '<a class="secondary" href="' + gmapsDir + '" target="_blank" rel="noopener">directions</a>' +
         '</div>';
       card.addEventListener('click', function (e) {
-        if (e.target.closest('a')) return;
+        if (e.target.closest('a') || e.target.closest('.fb-bar') || e.target.closest('.fb-form')) return;
         selectCard(card, group);
       });
       group.on('click', function () { lastLayerClick = Date.now(); flashCard(card); });
+      addFeedbackUI(card, {
+        kind: 'area', locality: loc.label, label: area.label,
+        rank: i + 1, score: area.score, evidence: evidenceLine(ev)
+      });
       walkList.appendChild(card);
     });
 
@@ -637,6 +726,10 @@
           '<a href="https://www.google.com/maps/search/?api=1&query=' + gq + '" target="_blank" rel="noopener">Google&nbsp;Maps&nbsp;→</a>' +
           '<a class="secondary" href="https://maps.apple.com/?q=' + gq + '" target="_blank" rel="noopener">Apple&nbsp;Maps</a>' +
         '</div>';
+      addFeedbackUI(card, {
+        kind: 'gem', locality: loc.label, label: p.name,
+        confidence: p.confidence || null, evidence: p.evidence || ''
+      });
       eatList.appendChild(card);
       p._card = card;
     });
@@ -661,7 +754,7 @@
               if (p._card) flashCard(p._card);
             });
             p._card.addEventListener('click', function (e) {
-              if (e.target.closest('a')) return;
+              if (e.target.closest('a') || e.target.closest('.fb-bar') || e.target.closest('.fb-form')) return;
               selectCard(p._card, null);
               map.setView(m.getLatLng(), 16);
               m.openPopup();
@@ -804,6 +897,7 @@
       el.addEventListener('click', function () { addLocality(el.textContent); });
     });
 
+    flushFeedbackQueue();
     loadResearchedIndex().then(function () {
       renderExplorer();
       var params = new URLSearchParams(location.search);

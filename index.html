@@ -154,6 +154,22 @@
   .research-btn:hover { border-color: var(--amber); }
   .research-btn:disabled { cursor: wait; opacity: .7; }
 
+  .fb-bar { margin: 8px 0 0 33px; display: flex; gap: 6px; }
+  .fb-btn {
+    background: none; border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+    font-size: 14px; padding: 2px 7px; opacity: .45;
+  }
+  .fb-btn:hover, .fb-btn.active { opacity: 1; border-color: var(--border); background: var(--panel); }
+  .fb-form { margin: 8px 0 0 33px; display: flex; gap: 8px; align-items: flex-start; }
+  .fb-text {
+    flex: 1; font-size: 12.5px; font-family: inherit; border-radius: 8px; resize: vertical;
+    border: 1px solid var(--border); background: var(--panel); color: var(--text); padding: 7px 9px;
+  }
+  .fb-send {
+    padding: 7px 12px; font-size: 12.5px; font-weight: 600; border: none; border-radius: 8px;
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  .fb-done { margin: 8px 0 0 33px; font-size: 12.5px; color: #34d399; }
   .find-here-box { font-size: 13px; }
   .find-here-btn {
     margin-top: 6px; padding: 6px 12px; font-size: 13px; font-weight: 600;
