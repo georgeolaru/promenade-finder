@@ -451,7 +451,7 @@
       '</header>' +
       '<div class="loc-body">' +
         (loc.fromHistory ? '<div class="loc-note">From your history (' + new Date(loc.fromHistory).toLocaleDateString() + ') · <a href="#" class="loc-refresh">refresh</a></div>' : '') +
-        (loc.clamped ? '<div class="loc-note">Large city — searched the central ~10 km.</div>' : '') +
+        (loc.clamped ? '<div class="loc-note">Wide boundary — searched ~10 km around the centre.</div>' : '') +
         '<div class="walk-list"></div>' +
         '<div class="eat-list"></div>' +
       '</div>';
