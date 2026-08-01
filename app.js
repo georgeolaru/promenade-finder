@@ -650,6 +650,8 @@
         '<div class="card-actions">' +
           '<a href="' + gmapsLoc + '" target="_blank" rel="noopener">Google&nbsp;Maps&nbsp;→</a>' +
           '<a href="' + amapsLoc + '" target="_blank" rel="noopener">Apple&nbsp;Maps&nbsp;→</a>' +
+          '<a class="secondary" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' +
+            lat + ',' + lon + '" target="_blank" rel="noopener">Street&nbsp;View</a>' +
           '<a class="secondary" href="' + gmapsDir + '" target="_blank" rel="noopener">directions</a>' +
         '</div>';
       card.addEventListener('click', function (e) {
@@ -730,6 +732,19 @@
         kind: 'gem', locality: loc.label, label: p.name,
         confidence: p.confidence || null, evidence: p.evidence || ''
       });
+      // map pan works from the start — uses the pin once geocoded, and pans to
+      // the locality centre meanwhile so the click always does something
+      card.addEventListener('click', function (e) {
+        if (e.target.closest('a') || e.target.closest('.fb-bar') || e.target.closest('.fb-form')) return;
+        selectCard(card, null);
+        if (p._marker) {
+          map.setView(p._marker.getLatLng(), 16);
+          p._marker.openPopup();
+        } else {
+          map.setView([Number(loc.place.lat) || map.getCenter().lat,
+                       Number(loc.place.lon) || map.getCenter().lng], 14);
+        }
+      });
       eatList.appendChild(card);
       p._card = card;
     });
@@ -753,12 +768,18 @@
               lastLayerClick = Date.now();
               if (p._card) flashCard(p._card);
             });
-            p._card.addEventListener('click', function (e) {
-              if (e.target.closest('a') || e.target.closest('.fb-bar') || e.target.closest('.fb-form')) return;
-              selectCard(p._card, null);
-              map.setView(m.getLatLng(), 16);
-              m.openPopup();
-            });
+            p._marker = m;
+            // once we know the exact spot, offer a one-tap Street View check
+            var actions = p._card.querySelector('.card-actions');
+            if (actions && !actions.querySelector('.sv-link')) {
+              var sv = document.createElement('a');
+              sv.className = 'secondary sv-link';
+              sv.target = '_blank'; sv.rel = 'noopener';
+              sv.href = 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' +
+                m.getLatLng().lat.toFixed(6) + ',' + m.getLatLng().lng.toFixed(6);
+              sv.textContent = 'Street View';
+              actions.appendChild(sv);
+            }
             loc.eatGroup.addLayer(m);
           }
         })
