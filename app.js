@@ -423,12 +423,31 @@
     return loaded.find(function (l) { return l.key === slug || slugOf(l.label) === slug; });
   }
 
-  function addLocality(query) {
+  // pre-built walk results for researched localities (published next to gems/)
+  function fetchStaticWalk(query) {
+    var slug = slugOf(query);
+    var candidates = [slug, slug + '-romania'];
+    var i = 0;
+    function tryNext() {
+      if (i >= candidates.length) return Promise.reject(new Error('no dataset'));
+      return fetch('walk/' + candidates[i++] + '.json')
+        .then(function (r) { if (!r.ok) throw new Error('miss'); return r.json(); })
+        .then(function (d) {
+          if (!d || !d.result || !d.place) throw new Error('miss');
+          return d;
+        })
+        .catch(tryNext);
+    }
+    return tryNext();
+  }
+
+  function addLocality(query, opts) {
+    opts = opts || {};
     query = (query || '').trim();
     if (!query) return;
     // legacy multi-input: “A; B; C” just adds each
     var parts = query.split(';').map(function (s) { return s.trim(); }).filter(Boolean);
-    if (parts.length > 1) { parts.forEach(addLocality); return; }
+    if (parts.length > 1) { parts.forEach(function (p) { addLocality(p, opts); }); return; }
     if (findLoaded(query)) { setStatus(query.split(',')[0] + ' is already on the map.'); return; }
     if (searching) {
       if (queue.length < 8 && queue.indexOf(query) === -1) { queue.push(query); updateQueueUI(); }
@@ -437,16 +456,24 @@
     searching = true;
     $('empty-state').style.display = 'none';
 
-    // instant path: cached visit
-    var hist = loadHistory().find(function (h) { return slugOf(h.q) === slugOf(query); });
+    // instant paths: your own cached visit, then the published dataset
+    var hist = opts.live ? null : loadHistory().find(function (h) { return slugOf(h.q) === slugOf(query); });
     var agentPromise = AGENT_ENDPOINTS.length ? fetchSuggestions(query) : Promise.resolve(null);
 
     var flow;
     if (hist) {
       flow = Promise.resolve({ place: hist.place, result: hist.result, clamped: hist.clamped, fromHistory: hist.ts });
+    } else if (!opts.live) {
+      flow = fetchStaticWalk(query).then(function (d) {
+        return { place: d.place, result: d.result, clamped: d.clamped, fromDataset: d.generatedAt };
+      }).catch(function () { return runLivePipeline(query); });
     } else {
-      setStatus('Looking up “' + query + '”…', true);
-      flow = geocode(query).then(function (place) {
+      flow = runLivePipeline(query);
+    }
+
+    function runLivePipeline(q2) {
+      setStatus('Looking up “' + q2 + '”…', true);
+      return geocode(q2).then(function (place) {
         setStatus('Fetching walkable places for ' + shortName(place) + '… (~10–30 s)', true);
         var built = buildQuery(place);
         return fetchOverpass(built.query).then(function (data) {
@@ -462,7 +489,7 @@
 
     flow.then(function (r) {
       setStatus('');
-      if (!r.fromHistory) saveHistoryEntry(query, r.place, r.result, r.clamped);
+      if (!r.fromHistory && !r.fromDataset) saveHistoryEntry(query, r.place, r.result, r.clamped);
       var loc = buildLocality(query, r);
       loaded.push(loc);
       renderLocalitySection(loc);
@@ -483,7 +510,8 @@
   function buildLocality(query, r) {
     return {
       key: slugOf(query), query: query, label: shortName(r.place),
-      place: r.place, result: r.result, clamped: r.clamped, fromHistory: r.fromHistory || null,
+      place: r.place, result: r.result, clamped: r.clamped,
+      fromHistory: r.fromHistory || null, fromDataset: r.fromDataset || null,
       walkGroup: L.layerGroup(), eatGroup: L.layerGroup(),
       gems: null, el: null
     };
@@ -571,6 +599,7 @@
       '</header>' +
       '<div class="loc-body">' +
         (loc.fromHistory ? '<div class="loc-note">From your history (' + new Date(loc.fromHistory).toLocaleDateString() + ') · <a href="#" class="loc-refresh">refresh</a></div>' : '') +
+        (loc.fromDataset ? '<div class="loc-note">Pre-analyzed (' + escapeHtml(loc.fromDataset) + ') · <a href="#" class="loc-refresh">refresh live</a></div>' : '') +
         (loc.clamped ? '<div class="loc-note">Wide boundary — searched ~10 km around the centre.</div>' : '') +
         '<div class="walk-list"></div>' +
         '<div class="eat-list"></div>' +
@@ -587,17 +616,16 @@
       if (e.target.closest('button')) return;
       focusLocality(loc);
     });
-    var refresh = sec.querySelector('.loc-refresh');
-    if (refresh) {
+    sec.querySelectorAll('.loc-refresh').forEach(function (refresh) {
       refresh.addEventListener('click', function (e) {
         e.preventDefault();
         var q = loc.query;
         var hist = loadHistory().filter(function (h) { return slugOf(h.q) !== slugOf(q); });
         try { localStorage.setItem(HKEY, JSON.stringify(hist)); } catch (err) {}
         removeLocality(loc);
-        addLocality(q);
+        addLocality(q, { live: true });
       });
-    }
+    });
 
     var walkList = sec.querySelector('.walk-list');
     if (loc.result.status === 'none') {
@@ -748,8 +776,42 @@
       eatList.appendChild(card);
       p._card = card;
     });
-    // geocode pins politely (Nominatim: 1 req/s), with fallbacks: full name →
-    // simplified name → the street address from the research (approximate pin)
+    function makeGemMarker(p, latlng, approx) {
+      var m = L.circleMarker(latlng, approx
+        ? { radius: 8, color: '#f59e0b', weight: 2, dashArray: '3 3', fillColor: '#fbbf24', fillOpacity: 0.35 }
+        : { radius: 8, color: '#f59e0b', weight: 2, fillColor: '#fbbf24', fillOpacity: 0.85 });
+      m.bindTooltip('☕ ' + p.name + (approx ? ' (≈ street-level)' : ''));
+      m.bindPopup('<b>' + escapeHtml(p.name) + '</b>' +
+        (approx ? ' <i>(approximate — street address)</i>' : '') +
+        '<br>' + escapeHtml(p.evidence || '') +
+        '<br><a href="https://www.google.com/maps/search/?api=1&query=' +
+        encodeURIComponent(p.name + ', ' + loc.label) + '" target="_blank" rel="noopener">Google Maps →</a>');
+      m.on('click', function () {
+        lastLayerClick = Date.now();
+        if (p._card) flashCard(p._card);
+      });
+      p._marker = m;
+      var actions = p._card && p._card.querySelector('.card-actions');
+      if (actions && !actions.querySelector('.sv-link')) {
+        var sv = document.createElement('a');
+        sv.className = 'secondary sv-link';
+        sv.target = '_blank'; sv.rel = 'noopener';
+        sv.href = 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' +
+          latlng[0].toFixed(6) + ',' + latlng[1].toFixed(6);
+        sv.textContent = 'Street View';
+        actions.appendChild(sv);
+      }
+      loc.eatGroup.addLayer(m);
+    }
+
+    // instant pins for places with coordinates baked into the dataset
+    places.forEach(function (p) {
+      if (p.lat && p.lon) makeGemMarker(p, [Number(p.lat), Number(p.lon)], !!p.approx);
+    });
+    var pending = places.filter(function (p) { return !(p.lat && p.lon); });
+
+    // remaining pins: geocode politely (Nominatim: 1 req/s), with fallbacks: full
+    // name → simplified name → the street address from the research (approximate)
     function geocodeCandidates(p) {
       var out = [{ q: p.name + ', ' + loc.label, approx: false }];
       var simplified = p.name.replace(/\(.*?\)/g, ' ')
@@ -765,8 +827,8 @@
       return out;
     }
     (function next() {
-      if (i >= places.length) return;
-      var p = places[i++];
+      if (i >= pending.length) return;
+      var p = pending[i++];
       var candidates = geocodeCandidates(p);
       var ci = 0;
       (function tryCandidate() {
@@ -780,36 +842,9 @@
             setTimeout(tryCandidate, 1100);
             return;
           }
-          {
-            var m = L.circleMarker([Number(list[0].lat), Number(list[0].lon)], cand.approx
-              ? { radius: 8, color: '#f59e0b', weight: 2, dashArray: '3 3', fillColor: '#fbbf24', fillOpacity: 0.35 }
-              : { radius: 8, color: '#f59e0b', weight: 2, fillColor: '#fbbf24', fillOpacity: 0.85 });
-            m.bindTooltip('☕ ' + p.name + (cand.approx ? ' (≈ street-level)' : ''));
-            m.bindPopup('<b>' + escapeHtml(p.name) + '</b>' +
-              (cand.approx ? ' <i>(approximate — street address)</i>' : '') +
-              '<br>' + escapeHtml(p.evidence || '') +
-              '<br><a href="https://www.google.com/maps/search/?api=1&query=' +
-              encodeURIComponent(p.name + ', ' + loc.label) + '" target="_blank" rel="noopener">Google Maps →</a>');
-            m.on('click', function () {
-              lastLayerClick = Date.now();
-              if (p._card) flashCard(p._card);
-            });
-            p._marker = m;
-            // once we know the exact spot, offer a one-tap Street View check
-            var actions = p._card.querySelector('.card-actions');
-            if (actions && !actions.querySelector('.sv-link')) {
-              var sv = document.createElement('a');
-              sv.className = 'secondary sv-link';
-              sv.target = '_blank'; sv.rel = 'noopener';
-              sv.href = 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' +
-                m.getLatLng().lat.toFixed(6) + ',' + m.getLatLng().lng.toFixed(6);
-              sv.textContent = 'Street View';
-              actions.appendChild(sv);
-            }
-            loc.eatGroup.addLayer(m);
-            if (layersOn.eat && !map.hasLayer(loc.eatGroup)) loc.eatGroup.addTo(map);
-            setTimeout(next, 1100);
-          }
+          makeGemMarker(p, [Number(list[0].lat), Number(list[0].lon)], cand.approx);
+          if (layersOn.eat && !map.hasLayer(loc.eatGroup)) loc.eatGroup.addTo(map);
+          setTimeout(next, 1100);
         })
         .catch(function () { setTimeout(tryCandidate, 1100); });
       })();
