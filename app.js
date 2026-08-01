@@ -748,20 +748,46 @@
       eatList.appendChild(card);
       p._card = card;
     });
-    // geocode pins politely (Nominatim: 1 req/s)
+    // geocode pins politely (Nominatim: 1 req/s), with fallbacks: full name →
+    // simplified name → the street address from the research (approximate pin)
+    function geocodeCandidates(p) {
+      var out = [{ q: p.name + ', ' + loc.label, approx: false }];
+      var simplified = p.name.replace(/\(.*?\)/g, ' ')
+        .replace(/\b(hotel|restaurant|pensiunea?|terasa|cafeneaua|cofet[ăa]ria|bistro|pizzeria|patiseria|cherhanaua?|gastro\s*bar|events?)\b/gi, ' ')
+        .replace(/[&·-]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (simplified && simplified.toLowerCase() !== p.name.toLowerCase()) {
+        out.push({ q: simplified + ', ' + loc.label, approx: false });
+      }
+      if (p.area) {
+        var street = p.area.replace(/\b(centru|center|central[ăa]?|zona)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+        if (street) out.push({ q: street + ', ' + loc.label, approx: true });
+      }
+      return out;
+    }
     (function next() {
       if (i >= places.length) return;
       var p = places[i++];
-      fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=' +
-        encodeURIComponent(p.name + ', ' + loc.label))
+      var candidates = geocodeCandidates(p);
+      var ci = 0;
+      (function tryCandidate() {
+        if (ci >= candidates.length) { setTimeout(next, 300); return; }
+        var cand = candidates[ci++];
+        fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=' +
+          encodeURIComponent(cand.q))
         .then(function (r) { return r.json(); })
         .then(function (list) {
-          if (list.length) {
-            var m = L.circleMarker([Number(list[0].lat), Number(list[0].lon)], {
-              radius: 8, color: '#f59e0b', weight: 2, fillColor: '#fbbf24', fillOpacity: 0.85
-            });
-            m.bindTooltip('☕ ' + p.name);
-            m.bindPopup('<b>' + escapeHtml(p.name) + '</b><br>' + escapeHtml(p.evidence || '') +
+          if (!list.length) {
+            setTimeout(tryCandidate, 1100);
+            return;
+          }
+          {
+            var m = L.circleMarker([Number(list[0].lat), Number(list[0].lon)], cand.approx
+              ? { radius: 8, color: '#f59e0b', weight: 2, dashArray: '3 3', fillColor: '#fbbf24', fillOpacity: 0.35 }
+              : { radius: 8, color: '#f59e0b', weight: 2, fillColor: '#fbbf24', fillOpacity: 0.85 });
+            m.bindTooltip('☕ ' + p.name + (cand.approx ? ' (≈ street-level)' : ''));
+            m.bindPopup('<b>' + escapeHtml(p.name) + '</b>' +
+              (cand.approx ? ' <i>(approximate — street address)</i>' : '') +
+              '<br>' + escapeHtml(p.evidence || '') +
               '<br><a href="https://www.google.com/maps/search/?api=1&query=' +
               encodeURIComponent(p.name + ', ' + loc.label) + '" target="_blank" rel="noopener">Google Maps →</a>');
             m.on('click', function () {
@@ -781,10 +807,12 @@
               actions.appendChild(sv);
             }
             loc.eatGroup.addLayer(m);
+            if (layersOn.eat && !map.hasLayer(loc.eatGroup)) loc.eatGroup.addTo(map);
+            setTimeout(next, 1100);
           }
         })
-        .catch(function () { /* skip pin */ })
-        .finally(function () { setTimeout(next, 1100); });
+        .catch(function () { setTimeout(tryCandidate, 1100); });
+      })();
     })();
     if (layersOn.eat) loc.eatGroup.addTo(map);
     applyLayerVisibility();
